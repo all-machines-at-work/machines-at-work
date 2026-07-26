@@ -283,16 +283,17 @@ print(g("input_tokens") + g("cache_creation_input_tokens") + g("cache_read_input
   n=$((n + 1))
   # Tokens ride with every cost figure: on a subscription the dollar number is an
   # estimate, the token count is what was actually spent.
-  toks="$(fmt_k $((task_in + task_out))) tok ($(fmt_k "$task_in") in / $(fmt_k "$task_out") out)"
+  toks="$(fmt_k $((task_in + task_out))) tok"
+  toks_detail="$toks ($(fmt_k "$task_in") in / $(fmt_k "$task_out") out)"
   timing=$(timing_summary "$id")
   total_secs=$((total_secs + $(timing_total "$id")))
   set_field "$dir/task.md" Timing "${timing:--}"
   if [ -n "$SUBSCRIPTION" ]; then
     set_field "$dir/task.md" Cost "subscription (~\$$task_cost API-equiv, $toks)"
-    echo "── task $id → $status ($n/$MAX_TASKS; subscription; ~\$$task_cost API-equiv; $toks)"
+    echo "── task $id → $status ($n/$MAX_TASKS; subscription; ~\$$task_cost API-equiv; $toks_detail)"
   else
     set_field "$dir/task.md" Cost "\$$task_cost ($toks)"
-    echo "── task $id → $status ($n/$MAX_TASKS; \$$task_cost; $toks)"
+    echo "── task $id → $status ($n/$MAX_TASKS; \$$task_cost; $toks_detail)"
   fi
   [ -z "$timing" ] || echo "   timing: $timing"
   if [ -z "$SUBSCRIPTION" ] && python3 -c "exit(0 if $total_cost >= $MAX_COST_USD else 1)"; then
@@ -300,6 +301,6 @@ print(g("input_tokens") + g("cache_creation_input_tokens") + g("cache_read_input
     break
   fi
 done
-run_toks="$(fmt_k $((total_in + total_out))) tok ($(fmt_k "$total_in") in / $(fmt_k "$total_out") out)"
+run_toks="$(fmt_k $((total_in + total_out))) tok"
 if [ -n "$SUBSCRIPTION" ]; then spent="subscription (~\$$total_cost API-equiv, $run_toks)"; else spent="\$$total_cost, $run_toks"; fi
 "$SCRIPTS/notify.sh" "loop.sh finished: $n task(s) in $(fmt_dur "$total_secs"), $spent. $("$SCRIPTS/task.sh" status | tail -n +2 | awk '{print $2}' | sort | uniq -c | tr '\n' ' ')"
