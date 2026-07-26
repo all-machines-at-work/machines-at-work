@@ -20,6 +20,10 @@
 # with the captured reason; a zero-commit branch is abandoned so the retry is clean.
 # MODEL pins the model passed to claude -p (default opus) so the session never
 # silently falls back to a cheaper default; set MODEL=sonnet|fable to switch.
+# Every finished task reports what it cost in BOTH currencies — dollars (real, or
+# API-equivalent on a subscription) and tokens — plus a per-step wall-clock
+# breakdown (preflight / llm / verify / smoke) collected in tasks/<id>/timings.tsv
+# by the scripts themselves. Both are recorded into task.md (Cost:, Timing:).
 # Usage: MODEL=opus MAX_TASKS=5 MAX_COST_USD=15 MAX_RESUME=3 MAX_RETRIES=10 RETRY_BACKOFF=60 LIMIT_BACKOFF=1800 UPSTREAM_BACKOFF=1800 CONTINUE_ON_BLOCK=0 loop.sh
 set -euo pipefail
 SCRIPTS="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
@@ -41,7 +45,7 @@ case "$MODEL" in
   *) echo "ERROR: MODEL must be opus, sonnet, or fable (got '$MODEL')" >&2; exit 1 ;;
 esac
 MODEL_UC=$(echo "$MODEL" | tr '[:lower:]' '[:upper:]')
-total_cost=0 n=0 retries=0
+total_cost=0 n=0 retries=0 total_in=0 total_out=0 total_secs=0
 
 # On a Claude subscription there's no per-token bill, so total_cost_usd is an
 # API-equivalent estimate, not real spend — record it but don't cap on it.
@@ -106,15 +110,26 @@ while [ "$n" -lt "$MAX_TASKS" ]; do
   if [ -n "$SUBSCRIPTION" ]; then spent="subscription"; else spent="\$$total_cost"; fi
   echo "══ task $id (task $((n + 1))/$MAX_TASKS, spent $spent)"
   echo "Solving task with $MODEL_UC"
-  resume=0; task_cost=0; fail_reason=""; prompt="$BUILD_SKILL $id"
+  resume=0; task_cost=0; task_in=0; task_out=0; fail_reason=""; prompt="$BUILD_SKILL $id"
+  # MAW_TIMING_ID pins every script the session runs (preflight/verify) to this
+  # task's timings.tsv, whatever its Status has become by then.
+  export MAW_TIMING_ID="$id"
   while :; do
     before=$(branch_head "$id")   # branch tips before the session, to detect a no-op resume
     rc=0
+    # LLM time = session wall clock minus whatever the scripts recorded while it
+    # ran, so `llm` is the model's own work (implement + review) and the rows in
+    # timings.tsv stay non-overlapping — their sum is the task's real total.
+    sess_t0=$(date +%s); scripted_before=$(timing_total "$id")
     out=$(claude -p "$prompt" \
           --model "$MODEL_ARG" \
           --permission-mode acceptEdits \
           --allowedTools "Bash,Read,Edit,Write,Glob,Grep,Agent,Skill,TodoWrite" \
           --output-format json 2>"$errf") || rc=$?
+    sess_secs=$(( $(date +%s) - sess_t0 ))
+    scripted=$(( $(timing_total "$id") - scripted_before ))
+    [ "$scripted" -ge 0 ] && [ "$scripted" -le "$sess_secs" ] || scripted=0
+    timing_record llm "$(( sess_secs - scripted ))"
     dir=$(task_dir "$id"); status=$(get_field "$dir/task.md" Status)
     if [ "$rc" -ne 0 ] && [ "$status" != "done" ] && [ "$status" != "pr" ] \
        && wait=$(limit_wait "$out"$'\n'"$(cat "$errf")"); then
@@ -188,6 +203,15 @@ except Exception as e:
     fi
     cost=$(echo "$out" | python3 -c 'import json,sys; print(json.load(sys.stdin).get("total_cost_usd", 0))' 2>/dev/null || echo 0)
     task_cost=$(python3 -c "print(round($task_cost + $cost, 2))")
+    # Tokens from the same envelope. Cache reads/writes are input the session
+    # really consumed, so they count — an API-equiv cost figure with no token
+    # count behind it says nothing about how much work a task actually was.
+    usage=$(echo "$out" | python3 -c 'import json,sys
+try: u = json.load(sys.stdin).get("usage") or {}
+except Exception: u = {}
+g = lambda k: u.get(k) or 0
+print(g("input_tokens") + g("cache_creation_input_tokens") + g("cache_read_input_tokens"), g("output_tokens"))' 2>/dev/null || echo "0 0")
+    task_in=$((task_in + ${usage%% *})); task_out=$((task_out + ${usage##* }))
     # A stalled resume: the session exited cleanly but committed nothing new — so
     # resuming again would just no-op. Detected by comparing branch tips.
     stalled=; { [ "$rc" -eq 0 ] && [ "$(branch_head "$id")" = "$before" ]; } && stalled=1
@@ -233,6 +257,8 @@ except Exception as e:
     break
   done
   total_cost=$(python3 -c "print(round($total_cost + $task_cost, 2))")
+  total_in=$((total_in + task_in)); total_out=$((total_out + task_out))
+  unset MAW_TIMING_ID
   # Env failure with no work done: claude errored before anything was committed —
   # status still todo (never started), or in-progress on a zero-commit branch (a
   # drop right after task.sh start). No network, a stranded tree, a crash. Not the
@@ -255,17 +281,25 @@ except Exception as e:
   fi
   retries=0   # a task that reached a real state clears the transient-failure streak
   n=$((n + 1))
+  # Tokens ride with every cost figure: on a subscription the dollar number is an
+  # estimate, the token count is what was actually spent.
+  toks="$(fmt_k $((task_in + task_out))) tok ($(fmt_k "$task_in") in / $(fmt_k "$task_out") out)"
+  timing=$(timing_summary "$id")
+  total_secs=$((total_secs + $(timing_total "$id")))
+  set_field "$dir/task.md" Timing "${timing:--}"
   if [ -n "$SUBSCRIPTION" ]; then
-    set_field "$dir/task.md" Cost "subscription"
-    echo "── task $id → $status ($n/$MAX_TASKS; subscription; ~\$$task_cost API-equiv)"
+    set_field "$dir/task.md" Cost "subscription (~\$$task_cost API-equiv, $toks)"
+    echo "── task $id → $status ($n/$MAX_TASKS; subscription; ~\$$task_cost API-equiv; $toks)"
   else
-    set_field "$dir/task.md" Cost "\$$task_cost"
-    echo "── task $id → $status ($n/$MAX_TASKS; \$$task_cost)"
+    set_field "$dir/task.md" Cost "\$$task_cost ($toks)"
+    echo "── task $id → $status ($n/$MAX_TASKS; \$$task_cost; $toks)"
   fi
+  [ -z "$timing" ] || echo "   timing: $timing"
   if [ -z "$SUBSCRIPTION" ] && python3 -c "exit(0 if $total_cost >= $MAX_COST_USD else 1)"; then
     "$SCRIPTS/notify.sh" "loop.sh stopped: cost cap \$$MAX_COST_USD reached"
     break
   fi
 done
-if [ -n "$SUBSCRIPTION" ]; then spent="subscription (~\$$total_cost API-equiv)"; else spent="\$$total_cost"; fi
-"$SCRIPTS/notify.sh" "loop.sh finished: $n task(s), $spent. $("$SCRIPTS/task.sh" status | tail -n +2 | awk '{print $2}' | sort | uniq -c | tr '\n' ' ')"
+run_toks="$(fmt_k $((total_in + total_out))) tok ($(fmt_k "$total_in") in / $(fmt_k "$total_out") out)"
+if [ -n "$SUBSCRIPTION" ]; then spent="subscription (~\$$total_cost API-equiv, $run_toks)"; else spent="\$$total_cost, $run_toks"; fi
+"$SCRIPTS/notify.sh" "loop.sh finished: $n task(s) in $(fmt_dur "$total_secs"), $spent. $("$SCRIPTS/task.sh" status | tail -n +2 | awk '{print $2}' | sort | uniq -c | tr '\n' ' ')"

@@ -52,7 +52,17 @@ get_field() { # get_field <task.md> <Field>
 }
 
 set_field() { # set_field <task.md> <Field> <value>
-  FIELD="$2" VALUE="$3" perl -pi -e 's/^$ENV{FIELD}:.*/$ENV{FIELD}: $ENV{VALUE}/' "$1"
+  # A field the file doesn't have yet is APPENDED to the header block (the run of
+  # `Name: value` lines under the title) rather than silently dropped — so a field
+  # added to the template later still lands on tasks created before it.
+  if grep -q "^$2:" "$1"; then
+    FIELD="$2" VALUE="$3" perl -pi -e 's/^$ENV{FIELD}:.*/$ENV{FIELD}: $ENV{VALUE}/' "$1"
+  else
+    FIELD="$2" VALUE="$3" perl -pi -e '
+      if (!$done && /^\s*$/ && $prev =~ /^[A-Za-z][\w -]*:/) { print "$ENV{FIELD}: $ENV{VALUE}\n"; $done = 1 }
+      $prev = $_;' "$1"
+    grep -q "^$2:" "$1" || printf '%s: %s\n' "$2" "$3" >> "$1"
+  fi
 }
 
 task_title() { head -1 "$1" | sed 's/^# [0-9]* · //'; }
@@ -117,6 +127,82 @@ branch_has_commits() { # rc 0 if any affected repo's task branch is ahead of its
     [ -n "$(git -C "$path" log --oneline "$base..$branch" 2>/dev/null)" ] && return 0
   done
   return 1
+}
+
+# ── step timing ─────────────────────────────────────────────────────────────
+# Every deterministic step (preflight, verify, smoke) records its own wall time
+# into the task's timings.tsv — "<step>\t<seconds>", one row per run. loop.sh
+# adds the LLM time it measures directly (session wall clock minus whatever the
+# scripts recorded meanwhile), so the rows never overlap and a plain sum is the
+# task's real total. That is what makes a per-step breakdown deterministic: no
+# LLM has to cooperate, and a step that runs twice (verify in the build, again in
+# task.sh done) is simply counted twice — which is the truth.
+#
+# The target task is MAW_TIMING_ID when set (loop.sh exports it around the
+# session, so nested scripts land in the right file even as Status changes),
+# else the first in-progress task — the scaffold runs one at a time, so that is
+# the one a hand-run build is working on — else a scratch file nobody reads.
+timing_file() {
+  local id="${MAW_TIMING_ID:-}" d
+  if [ -z "$id" ]; then
+    for d in "$TASKS"/[0-9]*/; do
+      [ -f "$d/task.md" ] || continue
+      [ "$(get_field "$d/task.md" Status)" = "in-progress" ] || continue
+      id=$(basename "$d" | cut -d- -f1); break
+    done
+  fi
+  [ -n "$id" ] && d=$(task_dir "$id" 2>/dev/null) && { echo "$d/timings.tsv"; return; }
+  echo "$TASKS/_timings.tsv"
+}
+
+timing_record() { # timing_record <step> <seconds> — never fails its caller
+  local f
+  f=$(timing_file 2>/dev/null) || return 0
+  # Check the dir first: a failed `>>` redirection prints its own error, which
+  # `|| true` can't suppress — and a workspace with no tasks/ dir is legitimate.
+  [ -d "$(dirname "$f")" ] || return 0
+  { printf '%s\t%s\n' "$1" "$2" >> "$f"; } 2>/dev/null || true
+  return 0
+}
+
+timing_total() { # timing_total [id] -> seconds recorded so far (0 when none)
+  local f
+  f=$(MAW_TIMING_ID="${1:-${MAW_TIMING_ID:-}}" timing_file 2>/dev/null) || { echo 0; return; }
+  [ -f "$f" ] || { echo 0; return; }
+  awk -F'\t' '{s += $2} END {print s + 0}' "$f"
+}
+
+fmt_dur() { # fmt_dur <seconds> -> 45s | 3m10s | 1h4m
+  local s="${1:-0}"
+  if   [ "$s" -lt 60 ];   then echo "${s}s"
+  elif [ "$s" -lt 3600 ]; then echo "$((s / 60))m$((s % 60))s"
+  else echo "$((s / 3600))h$((s % 3600 / 60))m"; fi
+}
+
+fmt_k() { # fmt_k <tokens> -> "1840k", rounded to the nearest thousand
+  local n="${1:-0}"
+  echo "$(( (n + 500) / 1000 ))k"
+}
+
+timing_summary() { # timing_summary <id> -> "total 18m2s · llm 14m2s · verify 3m10s …"
+  # Rows are grouped on the part before ':' (verify:core + verify:app_mobile →
+  # one `verify`), reported in pipeline order with anything unknown appended.
+  local f d id="$1"
+  d=$(task_dir "$id" 2>/dev/null) || return 0
+  f="$d/timings.tsv"
+  [ -f "$f" ] || return 0
+  local out="" step secs
+  out="total $(fmt_dur "$(awk -F'\t' '{s += $2} END {print s + 0}' "$f")")"
+  while IFS=$'\t' read -r step secs; do
+    out="$out · $step $(fmt_dur "$secs")"
+  done < <(awk -F'\t' '
+    { split($1, a, ":"); k = a[1]; sum[k] += $2; if (!(k in seen)) { seen[k]; order[++n] = k } }
+    END {
+      split("preflight llm verify smoke", pipeline, " ")
+      for (i = 1; i <= 4; i++) if (pipeline[i] in sum) { print pipeline[i] "\t" sum[pipeline[i]]; done[pipeline[i]] }
+      for (i = 1; i <= n; i++) if (!(order[i] in done)) print order[i] "\t" sum[order[i]]
+    }' "$f")
+  echo "$out"
 }
 
 branch_head() { # branch_head <id> -> "repo:sha …" tips of the task branch (- if absent),
