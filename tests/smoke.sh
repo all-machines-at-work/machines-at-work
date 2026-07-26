@@ -495,6 +495,44 @@ else
   echo "[smoke] linear.sh skipped (no jq)"
 fi
 
+# --- loop.sh reporting: a finished task must say what it cost in TOKENS as well
+# as dollars, and where its time went. `claude` is stubbed to emit a real JSON
+# envelope and to run the gates the way a session does, so the `llm` figure is
+# exercised as "session wall clock minus what the scripts recorded meanwhile".
+WS4="$TMP/ws4"; mkdir -p "$WS4/app" "$WS4/machines-at-work/tasks"
+git -C "$WS4/app" init -qb main
+git -C "$WS4/app" -c user.email=t@t -c user.name=t commit -qm init --allow-empty
+cat > "$WS4/machines-at-work/agents.env" <<'EOF'
+PROJECT_NAME=smoke4
+DEFAULT_BRANCH=main
+REPOS="app"
+REPO_app=../app
+VERIFY_app="sleep 1"
+EOF
+cat > "$TMP/bin/claude" <<EOF
+#!/usr/bin/env bash
+"$MACHINES_AT_WORK/scripts/verify.sh" >/dev/null 2>&1   # a session runs the gates
+sleep 1
+echo '{"total_cost_usd": 0.42, "usage": {"input_tokens": 12000, "cache_creation_input_tokens": 0, "cache_read_input_tokens": 1828000, "output_tokens": 11500}}'
+EOF
+chmod +x "$TMP/bin/claude"
+cd "$WS4"
+t4=$("$MACHINES_AT_WORK/scripts/task.sh" new "Reported task")
+# -u ANTHROPIC_*: pin subscription mode so the assertion doesn't depend on how
+# this box happens to be authenticated.
+lout=$(PATH="$TMP/bin:$PATH" MAX_TASKS=1 env -u ANTHROPIC_API_KEY -u ANTHROPIC_AUTH_TOKEN \
+       "$MACHINES_AT_WORK/scripts/loop.sh" 2>&1) || fail "loop.sh failed: $lout"
+echo "$lout" | grep -q '1852k tok (1840k in / 12k out)' \
+  || fail "loop.sh must report token usage next to the cost: $lout"
+echo "$lout" | grep -qE '^   timing: total .* llm ' || fail "loop.sh must report a per-step timing line: $lout"
+grep -q '^Cost: subscription (~\$0.42 API-equiv, 1852k tok)' machines-at-work/tasks/"$t4"-*/task.md \
+  || fail "Cost field must carry tokens alongside the API-equiv estimate"
+grep -qE '^Timing: total [0-9]+[hms].* llm .* verify ' machines-at-work/tasks/"$t4"-*/task.md \
+  || fail "Timing field must break the task down per step"
+grep -q '^verify:app	' machines-at-work/tasks/"$t4"-*/timings.tsv \
+  || fail "a gate run inside the session must land in that task's timings.tsv"
+cd "$WS"
+
 # --- guard hook
 g() { echo "$1" | python3 "$MACHINES_AT_WORK/hooks/guard.py" >/dev/null 2>&1; }
 g '{"tool_name":"Bash","tool_input":{"command":"git push --force origin x"}}' && fail "guard: force push allowed" || true
