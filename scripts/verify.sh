@@ -15,7 +15,12 @@ failed=""
 [ $# -gt 0 ] || set -- $REPOS
 for repo in "$@"; do
   echo "── verify: $repo"
-  if ! (cd "$(repo_path "$repo")" && eval "$(verify_cmd "$repo")"); then
+  # Each run is timed into the task's timings.tsv (see lib.sh) — a red run too,
+  # since a failed test suite still spent the time.
+  t0=$(date +%s); rc=0
+  (cd "$(repo_path "$repo")" && eval "$(verify_cmd "$repo")") || rc=$?
+  timing_record "verify:$repo" "$(( $(date +%s) - t0 ))"
+  if [ "$rc" -ne 0 ]; then
     echo "── FAIL: $repo" >&2
     failed="$failed $repo"
     continue    # a repo that fails its own tests has nothing to smoke
@@ -29,10 +34,12 @@ for repo in "$@"; do
   # `bash -c` (not eval) so `timeout` owns the process: a smoke command that
   # hangs — a container that never turns healthy, a curl with no deadline —
   # would otherwise wedge the whole loop. rc 124 = the timeout fired.
-  if (cd "$(repo_path "$repo")" && timeout "${SMOKE_TIMEOUT:-300}" bash -c "$cmd"); then
+  t0=$(date +%s); rc=0
+  (cd "$(repo_path "$repo")" && timeout "${SMOKE_TIMEOUT:-300}" bash -c "$cmd") || rc=$?
+  timing_record "smoke:$repo" "$(( $(date +%s) - t0 ))"
+  if [ "$rc" -eq 0 ]; then
     echo "── PASS: $repo"
   else
-    rc=$?
     [ "$rc" -ne 124 ] || echo "── smoke timed out after ${SMOKE_TIMEOUT:-300}s" >&2
     echo "── FAIL: $repo (smoke)" >&2
     failed="$failed $repo"
