@@ -7,6 +7,12 @@ set -euo pipefail
 SCRIPTS="$(dirname "${BASH_SOURCE[0]}")"
 source "$SCRIPTS/lib.sh"
 
+# Time the checks-and-sync phase for the task breakdown. The trap covers the
+# early exits (a failed check still cost time); it is cleared before the verify
+# run below, which records itself — so the two never double-count.
+_pf_t0=$(date +%s)
+trap 'timing_record preflight "$(( $(date +%s) - _pf_t0 ))"' EXIT
+
 err=0
 if [ "$DONE" = "pr" ]; then
   gh auth status >/dev/null 2>&1 || { echo "FAIL: DONE=pr needs an authenticated gh CLI" >&2; err=1; }
@@ -37,6 +43,8 @@ done
 
 # DONE=pr: complete tasks whose PRs merged since the last run
 [ "$DONE" != "pr" ] || "$SCRIPTS/task.sh" sync
+
+timing_record preflight "$(( $(date +%s) - _pf_t0 ))"; trap - EXIT
 
 if [ "${1:-}" != "--quick" ] && ! "$SCRIPTS/verify.sh"; then
   if [ "$DONE" = "pr" ]; then

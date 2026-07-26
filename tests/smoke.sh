@@ -220,7 +220,37 @@ VERIFY_b="touch ran_b"
 EOF
 (cd "$WS2" && "$MACHINES_AT_WORK/scripts/verify.sh" >/dev/null) || fail "two-repo verify should pass"
 [ -f "$WS2/a/ran_a" ] && [ -f "$WS2/b/ran_b" ] || fail "no-arg verify skipped a repo"
+# a workspace with no tasks/ dir must still verify silently (timing records are
+# best-effort — they may never write an error into a caller's output)
+(cd "$WS2" && "$MACHINES_AT_WORK/scripts/verify.sh" 2>&1 >/dev/null | grep -q . ) \
+  && fail "verify wrote to stderr in a task-less workspace" || true
 cd "$WS"
+
+# --- step timing: verify.sh records its own wall time into the in-progress
+# task's timings.tsv, and timing_summary groups the rows (verify:a + verify:b →
+# one `verify`) with a total. This is what gives a finished task a per-step
+# breakdown without any LLM cooperation.
+tt=$("$MACHINES_AT_WORK/scripts/task.sh" new "Timed task")
+"$MACHINES_AT_WORK/scripts/task.sh" start "$tt" >/dev/null
+MAW_TIMING_ID=$tt "$MACHINES_AT_WORK/scripts/verify.sh" >/dev/null || fail "verify should pass for the timing check"
+tf=$(ls machines-at-work/tasks/"$tt"-*/timings.tsv) || fail "verify.sh recorded no timings"
+grep -q '^verify:app' "$tf" || fail "timings.tsv missing a verify row"
+printf 'llm\t120\nverify:app\t30\npreflight\t5\n' > "$tf"   # deterministic numbers
+sum=$(lib "timing_summary $tt")
+[ "$sum" = "total 2m35s · preflight 5s · llm 2m0s · verify 30s" ] || fail "timing_summary wrong: $sum"
+[ "$(lib 'fmt_k 1839500')" = "1840k" ] || fail "fmt_k should round to the nearest thousand"
+# a field the template gained later must still land on an older task.md, in the
+# header block — otherwise loop.sh silently drops Timing/Cost on existing projects
+tmd=$(ls machines-at-work/tasks/"$tt"-*/task.md)
+perl -ni -e 'print unless /^Timing:/' "$tmd"
+lib "set_field $tmd Timing 'total 5m'"
+grep -q '^Timing: total 5m' "$tmd" || fail "set_field must insert a missing field"
+[ "$(grep -n '^Timing:' "$tmd" | cut -d: -f1)" -lt "$(grep -n '^## ' "$tmd" | head -1 | cut -d: -f1)" ] \
+  || fail "an inserted field must land in the header block, not after it"
+[ "$(lib 'fmt_dur 3720')" = "1h2m" ] || fail "fmt_dur hours wrong"
+MAW_TIMING_ID=$tt lib "timing_record smoke:app 7" && grep -q '^smoke:app	7$' "$tf" \
+  || fail "MAW_TIMING_ID should pin the record to that task"
+"$MACHINES_AT_WORK/scripts/task.sh" abandon "$tt" >/dev/null
 
 # --- DONE=pr: fresh base from origin, done pushes branch + opens PR (gh is
 # stubbed, origin is a local bare repo), sync completes on merge, and a red
