@@ -224,6 +224,20 @@ EOF
 # best-effort — they may never write an error into a caller's output)
 (cd "$WS2" && "$MACHINES_AT_WORK/scripts/verify.sh" 2>&1 >/dev/null | grep -q . ) \
   && fail "verify wrote to stderr in a task-less workspace" || true
+# --- a verify command that leaves workers behind (flutter test does, on every
+# run) must not leak them: the run owns a process group, reaped when it returns
+WSR="$TMP/wsr"; mkdir -p "$WSR/c"
+cat > "$WSR/agents.env" <<'EOF'
+PROJECT_NAME=smoke_reap
+REPOS="c"
+REPO_c=c
+VERIFY_c="nohup sleep 600 >/dev/null 2>&1 & echo \$! > worker.pid; disown"
+EOF
+(cd "$WSR" && "$MACHINES_AT_WORK/scripts/verify.sh" >/dev/null) \
+  || fail "verify should pass while leaving a worker behind"
+worker=$(cat "$WSR/c/worker.pid") || fail "orphan check: verify never spawned the worker"
+sleep 3   # TERM, grace, KILL
+kill -0 "$worker" 2>/dev/null && fail "verify leaked an orphaned worker" || true
 cd "$WS"
 
 # --- step timing: verify.sh records its own wall time into the in-progress

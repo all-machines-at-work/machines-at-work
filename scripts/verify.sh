@@ -11,6 +11,25 @@ source "$(dirname "${BASH_SOURCE[0]}")/lib.sh"
 smoke=1
 [ "${1:-}" != "--no-smoke" ] || { smoke=0; shift; }
 
+run_reaped() { # run_reaped <cmd ...> -> the command's exit code
+  # Test runners fork workers that outlive them — every `flutter test` left a
+  # flutter_tester behind, and they piled up across days until a 4G box hit a
+  # 6.2G memory / 1.8G swap peak, slowing every later build. `set -m` puts the
+  # run in its own process group (pgid = $!, guaranteed by bash — no setsid, no
+  # racy `ps` lookup), so once it returns the survivors are addressable as a
+  # group and get reaped. A failing TERM means nothing survived: the good case.
+  local pid rc=0
+  set -m; "$@" & pid=$!; set +m
+  trap 'kill -TERM -- "-$pid" 2>/dev/null; exit 130' INT TERM   # Ctrl-C now stops
+  wait "$pid" || rc=$?                                          # at us; pass it on
+  trap - INT TERM
+  if kill -TERM -- "-$pid" 2>/dev/null; then
+    sleep 2                                    # grace, then insist
+    kill -KILL -- "-$pid" 2>/dev/null || true
+  fi
+  return "$rc"
+}
+
 failed=""
 [ $# -gt 0 ] || set -- $REPOS
 for repo in "$@"; do
@@ -18,7 +37,7 @@ for repo in "$@"; do
   # Each run is timed into the task's timings.tsv (see lib.sh) — a red run too,
   # since a failed test suite still spent the time.
   t0=$(date +%s); rc=0
-  (cd "$(repo_path "$repo")" && eval "$(verify_cmd "$repo")") || rc=$?
+  (cd "$(repo_path "$repo")" && run_reaped bash -c "$(verify_cmd "$repo")") || rc=$?
   timing_record "verify:$repo" "$(( $(date +%s) - t0 ))"
   if [ "$rc" -ne 0 ]; then
     echo "── FAIL: $repo" >&2
@@ -35,7 +54,7 @@ for repo in "$@"; do
   # hangs — a container that never turns healthy, a curl with no deadline —
   # would otherwise wedge the whole loop. rc 124 = the timeout fired.
   t0=$(date +%s); rc=0
-  (cd "$(repo_path "$repo")" && timeout "${SMOKE_TIMEOUT:-300}" bash -c "$cmd") || rc=$?
+  (cd "$(repo_path "$repo")" && run_reaped timeout "${SMOKE_TIMEOUT:-300}" bash -c "$cmd") || rc=$?
   timing_record "smoke:$repo" "$(( $(date +%s) - t0 ))"
   if [ "$rc" -eq 0 ]; then
     echo "── PASS: $repo"
