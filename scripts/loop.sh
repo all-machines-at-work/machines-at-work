@@ -14,7 +14,8 @@
 # retries after UPSTREAM_BACKOFF — teammate breakage is not a task failure.
 # Run from the project root.
 # Task selection halts on a blocked task (task.sh next gates its successors);
-# CONTINUE_ON_BLOCK=1 skips past it. A transient API/network drop and an env crash
+# CONTINUE_ON_BLOCK=1 skips past it. The queue is peeked before preflight, so a
+# run with nothing to build exits in seconds instead of paying a full verify. A transient API/network drop and an env crash
 # before any work (no network, stranded tree) are retried up to MAX_RETRIES with
 # RETRY_BACKOFF between tries — never counting against MAX_RESUME — then hard-stop
 # with the captured reason; a zero-commit branch is abandoned so the retry is clean.
@@ -55,6 +56,31 @@ SUBSCRIPTION=
   && [ "${CLAUDE_CODE_USE_BEDROCK:-}" != "1" ] && [ "${CLAUDE_CODE_USE_VERTEX:-}" != "1" ] \
   && SUBSCRIPTION=1
 errf=$(mktemp); trap 'rm -f "$errf"' EXIT
+
+# The run's closing summary. Also used by the pre-preflight peek below, so an
+# early exit reports exactly the way a completed run does.
+finish_notify() {
+  local run_toks spent
+  run_toks="$(fmt_k $((total_in + total_out))) tok"
+  if [ -n "$SUBSCRIPTION" ]; then spent="subscription (~\$$total_cost API-equiv, $run_toks)"; else spent="\$$total_cost, $run_toks"; fi
+  "$SCRIPTS/notify.sh" "loop.sh finished: $n task(s) in $(fmt_dur "$total_secs"), $spent. $("$SCRIPTS/task.sh" status | tail -n +2 | awk '{print $2}' | sort | uniq -c | tr '\n' ' ')"
+}
+
+# Peek the queue before preflight: with nothing to build (empty queue, or a
+# blocked task gating it) a run should cost seconds, not a multi-minute verify of
+# every repo that is immediately followed by "0 task(s)". next also returns
+# in-progress orphans, so a cold start still reaches the reconcile below.
+prc=0; "$SCRIPTS/task.sh" next >/dev/null || prc=$?
+if [ "$prc" -ne 0 ]; then
+  if [ "$prc" -eq 3 ]; then
+    echo "── stopping: a blocked task gates the queue (set CONTINUE_ON_BLOCK=1 to skip)"
+    "$SCRIPTS/notify.sh" "loop.sh stopped: a blocked task gates the queue" || true
+  else
+    echo "no todo tasks left"
+  fi
+  finish_notify
+  exit 0
+fi
 
 until "$SCRIPTS/preflight.sh"; do
   rc=$?
@@ -301,6 +327,4 @@ print(g("input_tokens") + g("cache_creation_input_tokens") + g("cache_read_input
     break
   fi
 done
-run_toks="$(fmt_k $((total_in + total_out))) tok"
-if [ -n "$SUBSCRIPTION" ]; then spent="subscription (~\$$total_cost API-equiv, $run_toks)"; else spent="\$$total_cost, $run_toks"; fi
-"$SCRIPTS/notify.sh" "loop.sh finished: $n task(s) in $(fmt_dur "$total_secs"), $spent. $("$SCRIPTS/task.sh" status | tail -n +2 | awk '{print $2}' | sort | uniq -c | tr '\n' ' ')"
+finish_notify
