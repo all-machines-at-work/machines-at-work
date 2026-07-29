@@ -10,6 +10,13 @@ A good note carries, in whatever form fits:
 - **Out of scope** — explicit non-goals; agents treat these as forbidden.
 - **How it's proven** — the commands or flows that show a finished result works end-to-end.
 
+A note can carry **images**: a photo texted into the project's Telegram topic is saved under
+`machines-at-work/resources/` and its caption becomes a note referencing it (`[image: …]`).
+`/machines-at-work:plan` reads the image itself — a mockup, a screenshot of a bug, a sketch —
+and the tasks it spawns record the path (`Resources:`) so the implementer and reviewer see the
+same picture. Dropping a file into `resources/` by hand and referencing it from a note works
+identically. Unlike notes, resource files are never deleted.
+
 A note can also amend work sitting in a **still-open PR** — name the PR or feature and the new
 tasks land on its branch, so the same PR picks them up. Once that PR merges, the window closes
 automatically; the note becomes a fresh task instead.
