@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # Task lifecycle. Deterministic — no LLM involved.
-# Usage: task.sh new "<title>" [repos] [feature] | start <id> | next | status | diagnose | done <id> | sync | block <id> "<reason>" | reopen <id> | abandon <id> | clean-repo <repo> | resolve <id> "<decision>"
+# Usage: task.sh new "<title>" [repos] [feature] | start <id> | next | status | diagnose | nits | done <id> | sync | block <id> "<reason>" | reopen <id> | abandon <id> | clean-repo <repo> | resolve <id> "<decision>"
 set -euo pipefail
 source "$(dirname "${BASH_SOURCE[0]}")/lib.sh"
 
@@ -116,6 +116,19 @@ cmd_next() {
     { [ "$s" = "in-progress" ] || [ "$s" = "todo" ]; } && { basename "$d" | cut -d- -f1; return 0; }
   done
   return 1
+}
+
+cmd_nits() { # every [nit] from a done task's review, newest task first. The
+  # disposal channel for DESIGN #5: nits are never re-looped inside a build, so
+  # /plan is the only place they get triaged into work or dropped on purpose.
+  local d md id
+  for d in $(ls -dr "$TASKS"/[0-9]*/ 2>/dev/null); do
+    md="$d/task.md"; [ -f "$md" ] || continue
+    [ "$(get_field "$md" Status)" = "done" ] || continue
+    [ -f "$d/review.md" ] || continue
+    id=$(basename "$d" | cut -d- -f1)
+    grep -h '\[nit\]' "$d/review.md" | sed "s|^|$id |" || true
+  done
 }
 
 cmd_status() {
@@ -473,6 +486,6 @@ cmd_abandon() { # discard an empty/unwanted task branch and reset to todo. Safe:
 }
 
 case "${1:-}" in
-  new|start|next|status|diagnose|done|sync|block|reopen|abandon|clean-repo|resolve) c="${1//-/_}"; shift; "cmd_$c" "$@" ;;
+  new|start|next|status|diagnose|nits|done|sync|block|reopen|abandon|clean-repo|resolve) c="${1//-/_}"; shift; "cmd_$c" "$@" ;;
   *) usage ;;
 esac
