@@ -2,9 +2,12 @@
 name: retro
 description: Mine finished tasks for recurring pipeline weaknesses and propose machines-at-work improvements. Human-gated — proposes, never applies.
 disable-model-invocation: true
+argument-hint: "[headless]"
 ---
 
 Improve the pipeline from evidence. You may NOT edit the machines-at-work plugin — you write proposals; the human applies them in the machines-at-work repo.
+
+Headless mode — when $ARGUMENTS contains `headless` (Telegram-triggered, nobody at a terminal): never prompt. Work exactly as below; step 6's report goes to stdout only — when this run finishes, the orchestrator daemon reads the new files in `machines-at-work/retro/` and posts each proposal into the project's topic, where a reaction applies it (a headless run in the machines-at-work repo that makes the proposed change and opens a PR). The human gate is the reaction plus the PR merge.
 
 1. Read every `machines-at-work/tasks/*/review.md` and `machines-at-work/tasks/*/feedback.md` (human-written) since the last retro (check `machines-at-work/retro/` for the last report date).
 2. Look for PATTERNS, not incidents: a finding class the reviewer flags repeatedly, a misunderstanding recurring across implementer runs, human feedback contradicting an agent's instructions, cost outliers.
@@ -15,6 +18,6 @@ Improve the pipeline from evidence. You may NOT edit the machines-at-work plugin
    - **Proposed change:** exact diff against the machines-at-work repo (agent prompt, skill, script, or hook) — the smaller the better. Prompt additions must pull their weight: would removing this line cause the mistake to recur?
    - **Risk:** what this change could regress.
 5. One-off mistakes are not patterns — list them under "observed, no action" and move on.
-6. Tell the user which proposals exist and your confidence in each.
+6. Commit the new report files in the workspace repo (`retro: <date> — <one-line summary>`; only the retro files, nothing else), then tell the user which proposals exist and your confidence in each.
 
 Never edit files under the plugin root. Never edit agents' memory directly.

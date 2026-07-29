@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # Task lifecycle. Deterministic — no LLM involved.
-# Usage: task.sh new "<title>" [repos] [feature] | start <id> | next | status | diagnose | done <id> | sync | block <id> "<reason>" | reopen <id> | abandon <id> | clean-repo <repo> | resolve <id> "<decision>"
+# Usage: task.sh new "<title>" [repos] [feature] | start <id> | next | status | diagnose | nits | done <id> | sync | block <id> "<reason>" | reopen <id> | abandon <id> | clean-repo <repo> | resolve <id> "<decision>"
 set -euo pipefail
 source "$(dirname "${BASH_SOURCE[0]}")/lib.sh"
 
@@ -116,6 +116,19 @@ cmd_next() {
     { [ "$s" = "in-progress" ] || [ "$s" = "todo" ]; } && { basename "$d" | cut -d- -f1; return 0; }
   done
   return 1
+}
+
+cmd_nits() { # every [nit] from a done task's review, newest task first. The
+  # disposal channel for DESIGN #5: nits are never re-looped inside a build, so
+  # /plan is the only place they get triaged into work or dropped on purpose.
+  local d md id
+  for d in $(ls -dr "$TASKS"/[0-9]*/ 2>/dev/null); do
+    md="$d/task.md"; [ -f "$md" ] || continue
+    [ "$(get_field "$md" Status)" = "done" ] || continue
+    [ -f "$d/review.md" ] || continue
+    id=$(basename "$d" | cut -d- -f1)
+    grep -h '\[nit\]' "$d/review.md" | sed "s|^|$id |" || true
+  done
 }
 
 cmd_status() {
@@ -256,7 +269,21 @@ cmd_done() {
   local id="${1:?task id}" dir md branch target feature title repo path shas sha url urls body
   dir=$(task_dir "$id"); md="$dir/task.md"
   [ "$(get_field "$md" Status)" = "in-progress" ] || { echo "ERROR: task $id is not in-progress" >&2; exit 1; }
-  "$(dirname "${BASH_SOURCE[0]}")/verify.sh" || { echo "ERROR: verify failed — not merging" >&2; exit 1; }
+  # The gate: the task's repos verify in full (tests + smoke boot); every other
+  # repo runs tests-only. A cross-repo break must not land green, but re-booting
+  # a service the task never touched serves nobody — SMOKE's --force-recreate
+  # restarts the preview a human may be reviewing on. Word lists, unquoted.
+  local task_repos other_repos r
+  task_repos=$(get_field "$md" Repos); other_repos=""
+  for r in $REPOS; do
+    case " $task_repos " in *" $r "*) ;; *) other_repos="$other_repos $r" ;; esac
+  done
+  # shellcheck disable=SC2086
+  "$(dirname "${BASH_SOURCE[0]}")/verify.sh" $task_repos \
+    || { echo "ERROR: verify failed — not merging" >&2; exit 1; }
+  # shellcheck disable=SC2086
+  [ -z "${other_repos// /}" ] || "$(dirname "${BASH_SOURCE[0]}")/verify.sh" --no-smoke $other_repos \
+    || { echo "ERROR: verify failed — not merging" >&2; exit 1; }
   branch=$(get_field "$md" Branch); title=$(task_title "$md"); shas=""
   feature=$(get_field "$md" Feature) || feature="-"
   target=$(task_base "$md")
@@ -473,6 +500,6 @@ cmd_abandon() { # discard an empty/unwanted task branch and reset to todo. Safe:
 }
 
 case "${1:-}" in
-  new|start|next|status|diagnose|done|sync|block|reopen|abandon|clean-repo|resolve) c="${1//-/_}"; shift; "cmd_$c" "$@" ;;
+  new|start|next|status|diagnose|nits|done|sync|block|reopen|abandon|clean-repo|resolve) c="${1//-/_}"; shift; "cmd_$c" "$@" ;;
   *) usage ;;
 esac

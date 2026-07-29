@@ -29,7 +29,7 @@ Intent can be a picture: a photo texted into the project's Telegram topic (a UI 
 
 Iterate: drop update notes (any shape) in `machines-at-work/updates/` and re-run `/machines-at-work:plan` — it commits your words to git history, then turns them into sized, verifiable tasks (only the delta not already built). There is no living spec to maintain; the notes' git history is the record of intent, each task.md records the note commit it was planned from (`Intent:`), and `/machines-at-work:retro` reads that note to tell a misunderstanding from a changed request.
 
-Human touchpoints: approve the plan, read `machines-at-work/NEEDS_HUMAN.md` when a task blocks, write `machines-at-work/tasks/<id>-*/feedback.md` after reviewing merged work, run `/machines-at-work:retro` to turn feedback into machines-at-work-improvement proposals (you apply them here — agents can't edit the plugin, a hook enforces it).
+Human touchpoints: approve the plan, read `machines-at-work/NEEDS_HUMAN.md` when a task blocks, write `machines-at-work/tasks/<id>-*/feedback.md` after reviewing merged work, run `/machines-at-work:retro` to turn feedback into machines-at-work-improvement proposals (you apply them here — agents can't edit the plugin, a hook enforces it; or text `retro` in the project's Telegram topic — each proposal posts back as a message, and reacting to one applies it as a PR on this repo for you to merge).
 
 ## Scripts
 

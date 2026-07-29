@@ -29,6 +29,12 @@
 set -euo pipefail
 SCRIPTS="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 source "$SCRIPTS/lib.sh"
+# `claude -p` below resolves the agents' `memory: project` store from cwd, so
+# every launcher must agree on one directory or the implementer's and reviewer's
+# lessons fork per launcher (proposals/2026-07-29-agent-memory-forks-by-cwd.md).
+# That directory is the project root — the workspace's parent when state lives in
+# a machines-at-work/ child, the workspace itself in the flat layout.
+case "$(basename "$WS")" in machines-at-work) cd "$(dirname "$WS")" ;; *) cd "$WS" ;; esac
 
 MAX_TASKS="${MAX_TASKS:-5}"
 MAX_COST_USD="${MAX_COST_USD:-15}"
