@@ -518,6 +518,20 @@ grep -q "build the login page" "$WS/machines-at-work/updates/tg-1600000000-42.md
 [ -f "$WS/machines-at-work/updates/tg-1600000005-43.md" ] || fail "inbound: second note not created"
 [ -z "$(ls -A "$WS/machines-at-work/updates/.inbox")" ] || fail "inbound: inbox not drained"
 "$MACHINES_AT_WORK/scripts/inbound.sh" >/dev/null || fail "inbound: empty inbox should be a no-op"
+# an image dropped next to its caption note becomes a permanent resource, and the
+# note's bare-basename reference is rewritten to the path a session reads
+printf 'fakejpg' > "$WS/machines-at-work/updates/.inbox/1600000010-44.jpg"
+printf 'build this mockup\n\n[image: 1600000010-44.jpg]\n' > "$WS/machines-at-work/updates/.inbox/1600000010-44.md"
+"$MACHINES_AT_WORK/scripts/inbound.sh" >/dev/null || fail "inbound: image drain failed"
+[ -f "$WS/machines-at-work/resources/tg-1600000010-44.jpg" ] || fail "inbound: image not moved to resources/"
+grep -q "\[image: machines-at-work/resources/tg-1600000010-44.jpg\]" \
+  "$WS/machines-at-work/updates/tg-1600000010-44.md" || fail "inbound: image reference not rewritten"
+# an already-pathed reference is left alone (no double rewrite on hand-written notes)
+printf 'match this style\n\n[image: machines-at-work/resources/style.png]\n' > "$WS/machines-at-work/updates/.inbox/1600000011-45.md"
+"$MACHINES_AT_WORK/scripts/inbound.sh" >/dev/null || fail "inbound: pathed-ref drain failed"
+grep -q "\[image: machines-at-work/resources/style.png\]" \
+  "$WS/machines-at-work/updates/tg-1600000011-45.md" || fail "inbound: pathed reference must not be rewritten"
+[ -z "$(ls -A "$WS/machines-at-work/updates/.inbox")" ] || fail "inbound: image inbox not drained"
 
 # --- linear.sh: one issue per plan via the issueCreate GraphQL mutation, curl
 # stubbed to return canned responses. Opt-in feature; only exercised where jq is

@@ -25,6 +25,8 @@ $MACHINES_AT_WORK/scripts/loop.sh      # headless: fresh context per task, cost/
 
 Team repo (you're the only plugin user): set `DONE=pr` in `machines-at-work/agents.env`. Preflight fetches a fresh `origin/<default>` base, `task.sh done` pushes the task branch and opens a pre-reviewed PR instead of merging, and `task.sh sync` (run by preflight) completes tasks once their PRs merge. A red upstream parks `loop.sh` (retry after `UPSTREAM_BACKOFF`) instead of blocking tasks.
 
+Intent can be a picture: a photo texted into the project's Telegram topic (a UI mockup, a bug screenshot, a whiteboard sketch) becomes a permanent file in `machines-at-work/resources/` plus a note referencing it — `/machines-at-work:plan` reads the image and turns it into implementation tasks that carry the path (`Resources:`), so the implementer and reviewer look at the same picture.
+
 Iterate: drop update notes (any shape) in `machines-at-work/updates/` and re-run `/machines-at-work:plan` — it commits your words to git history, then turns them into sized, verifiable tasks (only the delta not already built). There is no living spec to maintain; the notes' git history is the record of intent, each task.md records the note commit it was planned from (`Intent:`), and `/machines-at-work:retro` reads that note to tell a misunderstanding from a changed request.
 
 Human touchpoints: approve the plan, read `machines-at-work/NEEDS_HUMAN.md` when a task blocks, write `machines-at-work/tasks/<id>-*/feedback.md` after reviewing merged work, run `/machines-at-work:retro` to turn feedback into machines-at-work-improvement proposals (you apply them here — agents can't edit the plugin, a hook enforces it).
@@ -77,6 +79,8 @@ my-product/         run claude here; git repo versioning the machines-at-work st
   machines-at-work/
     agents.env      repos (../<repo>) + verify commands (validated by preflight)
     updates/        intent notes — the human's input; /plan consumes them, git history keeps them
+    resources/      permanent reference files — images texted into the topic land here; notes
+                    reference them ([image: …]) and tasks record them (Resources:)
     tasks/          SINGLE SOURCE OF TRUTH: NNNN-slug/{task,review,feedback,design}.md
     tasks/_log.md   one line per merged task (bounded memory)
     NEEDS_HUMAN.md  escalations

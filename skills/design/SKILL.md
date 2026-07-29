@@ -4,7 +4,7 @@ description: Produce a concrete UI/UX design for one task before implementation.
 argument-hint: "<task-id>"
 ---
 
-Write `machines-at-work/tasks/<id>-<slug>/design.md` for task $ARGUMENTS. The implementer will follow it literally — be concrete, not aspirational.
+Write `machines-at-work/tasks/<id>-<slug>/design.md` for task $ARGUMENTS. The implementer will follow it literally — be concrete, not aspirational. If the task's `Resources:` field lists files, Read them first (images too): a referenced mockup is the design's starting point — interpret it, don't override it.
 
 Cover, tersely:
 1. Layout: components, hierarchy, spacing (ASCII sketch beats prose).
