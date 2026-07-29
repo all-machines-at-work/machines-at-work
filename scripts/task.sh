@@ -298,6 +298,11 @@ cmd_done() {
       set_field "$md" PR "${urls# }"
       snapshot_ws "task $id pr: $title"
       echo "pr $id →$urls"
+      # The work now lives on the PR branch, but every repo has been put BACK on
+      # DEFAULT_BRANCH above — so anything serving this project (a preview stack)
+      # is showing the mainline, not what was just built. AFTER_DONE is where a
+      # workspace says what to do about that; it gets the branch that carries it.
+      after_done "$branch"
     fi
     return
   fi
@@ -329,6 +334,10 @@ cmd_done() {
   fi
   snapshot_ws "task $id done: $title"
   echo "done $id →${shas:- no changes}"
+  # $target, not $branch: the task branch is squashed away and deleted by now —
+  # the commit lives on the feature branch (DONE=pr) or DEFAULT_BRANCH (local).
+  # Only when something actually landed: a no-change task moved nothing to follow.
+  [ -z "$shas" ] || after_done "$target"
 }
 
 cmd_sync() {
