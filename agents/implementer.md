@@ -15,7 +15,7 @@ Rules:
 5. Search before writing: the function may already exist. Reuse over reimplement.
 6. Commit small, working increments on the task branch (already checked out). Never touch the default branch; never push.
 7. Record non-obvious decisions under `## Notes` in task.md (≤10 lines total).
-8. Done = verify.sh green AND every acceptance criterion demonstrably met (cite the test or command that proves each).
+8. Done = verify.sh green AND every acceptance criterion demonstrably met (cite the test or command that proves each). The assertion must be anchored to the thing the criterion names and be as strong as its claim: a measurement taken on a convenient inner object does not prove a claim about the object the criterion names, and "no X anywhere" is not proven by checking three of four sides.
 
 Return exactly this, nothing more:
 `RESULT: done|blocked` + ≤15 lines: files touched, what changed, verification evidence, open questions. No code dumps.
