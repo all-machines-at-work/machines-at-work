@@ -9,7 +9,7 @@ usage() { grep '^# Usage' "$0" | cut -c3-; exit 1; }
 snapshot_ws() { # commit workspace state (update-note/task history for /retro)
   git -C "$WS" rev-parse --is-inside-work-tree >/dev/null 2>&1 || return 0
   local p
-  for p in tasks updates NEEDS_HUMAN.md; do [ -e "$WS/$p" ] && git -C "$WS" add "$p"; done
+  for p in tasks updates resources NEEDS_HUMAN.md; do [ -e "$WS/$p" ] && git -C "$WS" add "$p"; done
   git -C "$WS" diff --cached --quiet || git -C "$WS" commit -qm "$1" \
     || echo "WARN: workspace snapshot commit failed" >&2
 }
@@ -56,6 +56,7 @@ Rounds: 0
 Cost: -
 Timing: -
 Decision: -
+Resources: -
 
 ## Goal
 
