@@ -29,6 +29,18 @@ cd "$WS"
 
 # --- preflight
 "$MACHINES_AT_WORK/scripts/preflight.sh" >/dev/null || fail "preflight should pass"
+# a forked agent-memory store (a launcher ran from the wrong cwd) must hard-fail:
+# lessons written there are invisible to every other launcher
+mkdir -p machines-at-work/tasks/.claude/agent-memory
+out=$("$MACHINES_AT_WORK/scripts/preflight.sh" --quick 2>&1 || true)
+echo "$out" | grep -q "agent memory forked" || fail "preflight must flag a forked memory store under tasks/"
+rm -rf machines-at-work/tasks/.claude
+mkdir -p machines-at-work/.claude/agent-memory
+out=$("$MACHINES_AT_WORK/scripts/preflight.sh" --quick 2>&1 || true)
+echo "$out" | grep -q "agent memory forked" || fail "preflight must flag a workspace-level memory store"
+rm -rf machines-at-work/.claude
+mkdir -p .claude/agent-memory   # the PROJECT-ROOT store is the legitimate one
+"$MACHINES_AT_WORK/scripts/preflight.sh" --quick >/dev/null || fail "preflight must accept the project-root store"
 fout=$("$MACHINES_AT_WORK/scripts/freshen.sh"); [[ "$fout" == *"nothing to do"* ]] || fail "freshen must no-op under DONE=local"
 
 # --- new / next / start
@@ -155,6 +167,14 @@ verdict=$(grep '^VERDICT:' "$d3/review.md" | tail -1)
 grep -q "Status: done" "$d3/task.md" || fail "id3 not done after merge"
 git -C app log -1 --format=%B | grep -q "Task-Id: $id3" || fail "id3 merge missing trailer"
 
+# --- task.sh nits: read-only digest of [nit] findings from DONE tasks — the one
+# triage point /plan reads (nits never re-loop inside a build, DESIGN #5)
+printf '## Round 1\n[nit] app/third.txt:1 — stale comment survives — cosmetic\nVERDICT: approve\n' > "$d3/review.md"
+nout=$("$MACHINES_AT_WORK/scripts/task.sh" nits)
+echo "$nout" | grep -q "$id3 \[nit\] app/third.txt:1" || fail "nits must list a done task's nit, id-prefixed: $nout"
+echo "$nout" | grep -q "VERDICT" && fail "nits must emit only [nit] lines: $nout" || true
+# an in-progress task's review is not listed (id2 is mid-flight with a review-less branch)
+
 # --- branch_head: fingerprints the task branch tip so loop.sh can spot a resume
 # that committed nothing. A sha while the branch lives (id2), "-" once merged/gone
 # (id3's branch was deleted by done).
@@ -224,6 +244,37 @@ EOF
 # best-effort — they may never write an error into a caller's output)
 (cd "$WS2" && "$MACHINES_AT_WORK/scripts/verify.sh" 2>&1 >/dev/null | grep -q . ) \
   && fail "verify wrote to stderr in a task-less workspace" || true
+
+# --- done verifies the task's repos in full, the rest tests-only: an untouched
+# repo's SMOKE must not fire (it would recreate a live preview mid-review), but
+# its VERIFY must (a cross-repo break may not land green)
+WS3="$TMP/ws3"; mkdir -p "$WS3/a" "$WS3/b" "$WS3/machines-at-work/tasks"
+git -C "$WS3" init -qb main && git -C "$WS3" config user.email t@t && git -C "$WS3" config user.name t
+for r in a b; do
+  git -C "$WS3/$r" init -qb main
+  git -C "$WS3/$r" -c user.email=t@t -c user.name=t commit -qm init --allow-empty
+done
+cat > "$WS3/machines-at-work/agents.env" <<'EOF'
+PROJECT_NAME=smoke3
+DEFAULT_BRANCH=main
+REPOS="a b"
+REPO_a=../a
+REPO_b=../b
+VERIFY_a="touch ran_verify_a"
+VERIFY_b="touch ran_verify_b"
+SMOKE_a="touch ran_smoke_a"
+SMOKE_b="touch ran_smoke_b"
+EOF
+(
+  cd "$WS3"
+  sid=$("$MACHINES_AT_WORK/scripts/task.sh" new "A-only change" a)
+  "$MACHINES_AT_WORK/scripts/task.sh" start "$sid" >/dev/null
+  echo x > a/x.txt && git -C a add . && git -C a -c user.email=t@t -c user.name=t commit -qm "x"
+  "$MACHINES_AT_WORK/scripts/task.sh" done "$sid" >/dev/null || fail "a-only done failed"
+  [ -f a/ran_verify_a ] && [ -f a/ran_smoke_a ] || fail "task repo must verify AND smoke at done"
+  [ -f b/ran_verify_b ] || fail "untouched repo must still run its tests at done"
+  [ -f b/ran_smoke_b ] && fail "untouched repo's smoke must NOT fire at done" || true
+)
 # --- a verify command that leaves workers behind (flutter test does, on every
 # run) must not leak them: the run owns a process group, reaped when it returns
 WSR="$TMP/wsr"; mkdir -p "$WSR/c"
