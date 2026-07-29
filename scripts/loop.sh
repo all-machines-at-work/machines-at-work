@@ -56,11 +56,23 @@ SUBSCRIPTION=
   && [ "${CLAUDE_CODE_USE_BEDROCK:-}" != "1" ] && [ "${CLAUDE_CODE_USE_VERTEX:-}" != "1" ] \
   && SUBSCRIPTION=1
 errf=$(mktemp); trap 'rm -f "$errf"' EXIT
+# Inherited by every script the session runs: tells task.sh that a landed task's
+# AFTER_DONE hook belongs to the END of this run, not to the moment it lands.
+export MAW_LOOP=1
 
 # The run's closing summary. Also used by the pre-preflight peek below, so an
 # early exit reports exactly the way a completed run does.
 finish_notify() {
-  local run_toks spent
+  local run_toks spent pending
+  # Fire the workspace's AFTER_DONE hook once, for the branch that landed LAST —
+  # task.sh only records it while a loop is running (lib.sh), because a hook that
+  # checks branches out would fight the next task. Every exit path comes through
+  # here, including the ones that build nothing (no file, no hook).
+  pending="$TASKS/_after-done.pending"
+  if [ -f "$pending" ]; then
+    MAW_LOOP= after_done "$(cat "$pending")"
+    rm -f "$pending"
+  fi
   run_toks="$(fmt_k $((total_in + total_out))) tok"
   if [ -n "$SUBSCRIPTION" ]; then spent="subscription (~\$$total_cost API-equiv, $run_toks)"; else spent="\$$total_cost, $run_toks"; fi
   "$SCRIPTS/notify.sh" "loop.sh finished: $n task(s) in $(fmt_dur "$total_secs"), $spent. $("$SCRIPTS/task.sh" status | tail -n +2 | awk '{print $2}' | sort | uniq -c | tr '\n' ' ')"

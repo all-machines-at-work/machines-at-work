@@ -321,6 +321,18 @@ fout=$("$MACHINES_AT_WORK/scripts/freshen.sh" 2>&1)
 [[ "$fout" == *"uncommitted changes"* ]] || fail "freshen must report a dirty repo"
 grep -q dirty "$WS3/app/ok.txt" || fail "freshen must not clobber uncommitted changes"
 git -C "$WS3/app" checkout -q -- ok.txt
+# AFTER_DONE (decision #36): a landed task tells the workspace which branch now
+# carries the work, so whatever serves the project can follow it — `done` has just
+# put every repo back on the default branch. Detached and tolerant: the hook here
+# exits nonzero, and `done` must still succeed.
+cat > "$TMP/bin/after-done-hook" <<'EOF'
+#!/usr/bin/env bash
+echo "$1 ws=$MAW_WORKSPACE env=$MAW_BRANCH" >> "$MAW_WORKSPACE/after-done.seen"
+exit 3
+EOF
+chmod +x "$TMP/bin/after-done-hook"
+printf 'AFTER_DONE=%q\n' "$TMP/bin/after-done-hook" >> "$WS3/machines-at-work/agents.env"
+
 idp=$("$MACHINES_AT_WORK/scripts/task.sh" new "Pr flow")
 "$MACHINES_AT_WORK/scripts/task.sh" start "$idp" >/dev/null
 echo feature > app/feat.txt
@@ -330,6 +342,19 @@ dp=$(echo machines-at-work/tasks/"$idp"-*/)
 grep -q "Status: pr" "$dp/task.md" || fail "status should be pr, not merged"
 grep -q "PR: app:https://example.test/pr/1" "$dp/task.md" || fail "PR url not recorded"
 [ "$(git -C app rev-parse --abbrev-ref HEAD)" = "main" ] || fail "should be back on main after pr"
+seen="$WS3/machines-at-work/after-done.seen"
+for _ in 1 2 3 4 5 6 7 8 9 10; do [ -s "$seen" ] && break; sleep 0.5; done
+grep -q "^task/$idp-pr-flow ws=$WS3/machines-at-work env=task/$idp-pr-flow$" "$seen" \
+  || fail "AFTER_DONE should fire with the PR branch: $(cat "$seen" 2>&1)"
+grep -q "task/$idp-pr-flow" machines-at-work/tasks/_after-done.log || fail "hook run not logged"
+: > "$seen"
+# inside a loop run the hook is DEFERRED (the next task starts immediately, and a
+# hook that checks branches out would fight it): task.sh records the branch,
+# loop.sh fires the last one when the run is over.
+lib3() { MAW_LOOP=1 bash -c "cd '$WS3' && source '$MACHINES_AT_WORK/scripts/lib.sh'; $1"; }
+lib3 "after_done feature/x" >/dev/null || fail "after_done under MAW_LOOP failed"
+sleep 0.5; [ -s "$seen" ] && fail "a loop's landing must not fire the hook immediately" || true
+[ "$(cat machines-at-work/tasks/_after-done.pending)" = "feature/x" ] || fail "deferred branch not recorded"
 git -C "$TMP/app-origin" rev-parse -q --verify "task/$idp-pr-flow" >/dev/null || fail "branch not pushed to origin"
 GH_PR_STATE=OPEN "$MACHINES_AT_WORK/scripts/task.sh" sync >/dev/null
 grep -q "Status: pr" "$dp/task.md" || fail "open PR must not complete the task"
@@ -351,6 +376,11 @@ git -C app add . && git -C app commit -qm "wip one"
 "$MACHINES_AT_WORK/scripts/task.sh" done "$fa" >/dev/null || fail "feature task done failed"
 grep -q "Status: done" machines-at-work/tasks/"$fa"-*/task.md || fail "feature task should be done on landing"
 grep -q "Status: open" machines-at-work/tasks/_features/login-flow.md || fail "feature must stay open mid-feature"
+# mid-feature the work lives on the integration branch, not the squashed-away task
+# branch — that is what AFTER_DONE must name (its PR opens only when the last task lands)
+for _ in 1 2 3 4 5 6 7 8 9 10; do [ -s "$seen" ] && break; sleep 0.5; done
+grep -q "^feature/login-flow " "$seen" || fail "AFTER_DONE should fire with the feature branch: $(cat "$seen" 2>&1)"
+: > "$seen"
 [ "$(git -C app rev-parse --abbrev-ref HEAD)" = "feature/login-flow" ] || fail "repo should sit on the feature branch mid-feature"
 git -C app log -1 --format=%B | grep -q "Task-Id: $fa" || fail "feature merge missing Task-Id trailer"
 "$MACHINES_AT_WORK/scripts/task.sh" start "$fb" >/dev/null
@@ -364,8 +394,20 @@ grep -q "PR: app:https://example.test/pr/1" machines-at-work/tasks/_features/log
 git -C "$TMP/app-origin" rev-parse -q --verify feature/login-flow >/dev/null || fail "feature branch not pushed to origin"
 [ "$(git -C app log --oneline main..feature/login-flow | wc -l | tr -d ' ')" = 2 ] \
   || fail "feature branch should carry exactly one commit per task"
+# the last task of the feature fires it too (the PR that just opened is on that
+# branch); drain it so the sync check below can't read a stale line
+for _ in 1 2 3 4 5 6 7 8 9 10; do [ -s "$seen" ] && break; sleep 0.5; done
+grep -q "^feature/login-flow " "$seen" || fail "AFTER_DONE should fire when the feature ships"
+: > "$seen"
 GH_PR_STATE=MERGED GH_PR_SHA=abcdef1234567890 "$MACHINES_AT_WORK/scripts/task.sh" sync >/dev/null
 grep -q "Status: done" machines-at-work/tasks/_features/login-flow.md || fail "merged feature PR should complete the feature"
+sleep 1; [ -s "$seen" ] && fail "sync must not fire AFTER_DONE — a merge is the human's state change" || true
+# ... and loop.sh drains what a run deferred (recorded above), on the way out — the
+# queue is empty here, so the run exits at the peek and still fires it exactly once
+"$MACHINES_AT_WORK/scripts/loop.sh" >/dev/null 2>&1 || fail "loop.sh with an empty queue should exit 0"
+for _ in 1 2 3 4 5 6 7 8 9 10; do [ -s "$seen" ] && break; sleep 0.5; done
+grep -q "^feature/x " "$seen" || fail "loop.sh must fire the deferred hook: $(cat "$seen" 2>&1)"
+[ -f machines-at-work/tasks/_after-done.pending ] && fail "the deferred branch must be consumed" || true
 git -C app rev-parse -q --verify feature/login-flow >/dev/null && fail "feature branch not cleaned up" || true
 grep -q "feature login-flow" machines-at-work/tasks/_log.md || fail "no feature log line"
 
