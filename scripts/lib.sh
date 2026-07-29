@@ -117,6 +117,42 @@ park_wip() { # park_wip <id> <msg>: commit leftover WIP on the task branch so
   done
 }
 
+after_done() { # after_done <branch>: fire the optional AFTER_DONE hook for work
+  # that just landed on <branch> (the PR branch, the feature branch it integrates
+  # into, or DEFAULT_BRANCH under DONE=local).
+  #
+  # Declared per workspace in agents.env, never auto-detected (#17/#33): what a
+  # project does when a task lands — refresh a preview onto the branch, deploy,
+  # ping a webhook — is not something the plugin can know or should. The seam is
+  # the same shape as notify.sh: a command the workspace names, run DETACHED and
+  # tolerantly. Detached because a real hook takes minutes (a preview rebuild is
+  # docker + a release web build) and the loop must move on to the next task;
+  # tolerant because a hook is a side channel — its failure is not the task's.
+  local branch="${1:-}" log
+  [ -n "${AFTER_DONE:-}" ] || return 0
+  if [ -n "${MAW_LOOP:-}" ]; then
+    # Inside a headless loop the NEXT task starts the moment this one lands, so a
+    # hook firing now would run against a tree that is about to move (and rebuild
+    # once per task for a state nobody looks at). Record the branch; loop.sh fires
+    # the last one when the run is over — one hook per run, on a settled tree.
+    { printf '%s\n' "$branch" > "$TASKS/_after-done.pending"; } 2>/dev/null || true
+    echo "[after-done] $branch → deferred to the end of the loop run"
+    return 0
+  fi
+  log="$TASKS/_after-done.log"
+  { printf '\n=== %s · %s\n' "$(date -u +%FT%TZ)" "$branch"; } >> "$log" 2>/dev/null || true
+  # $1 inside the -c string, so a branch name is an argument and never re-parsed
+  # as shell by the hook command. MAW_WORKSPACE/MAW_BRANCH are for the hook that
+  # needs them *inside* its command string (single-quote it in agents.env, which
+  # is sourced long before the hook runs) — e.g. a preview refresh, which is
+  # per-project and must be told which project.
+  MAW_WORKSPACE="$WS" MAW_BRANCH="$branch" \
+    nohup bash -c "$AFTER_DONE \"\$1\"" after_done "$branch" >> "$log" 2>&1 &
+  disown 2>/dev/null || true
+  echo "[after-done] $branch → $AFTER_DONE (detached; log: $log)"
+  return 0
+}
+
 branch_has_commits() { # rc 0 if any affected repo's task branch is ahead of its base
   local id="$1" dir branch base repo path
   dir=$(task_dir "$id"); branch=$(get_field "$dir/task.md" Branch)
