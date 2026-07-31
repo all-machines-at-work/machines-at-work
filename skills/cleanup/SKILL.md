@@ -17,9 +17,11 @@ Headless mode — when $ARGUMENTS contains `headless`: never prompt; step 5's su
    machines-at-work/updates/` for `cleanup-`); skim `tasks/*/review.md` nits since then —
    duplication/dead-code nits are pre-verified leads.
 2. Sweep each repo for: symbols with zero readers outside their own definition; near-identical
-   logic at ≥2 call sites worth one shared helper; orphaned files and exports; stale doc comments
-   narrating removed designs. Grep-verify every candidate — a "dead" symbol with a reflective or
-   string-keyed reader is a false positive that would plan a breaking task.
+   logic at ≥2 call sites worth one shared helper; parallel variants of the same UI concept (two
+   sheets/cards/pickers that should be one widget — a finding like any other; a variant that looks
+   deliberate is flagged as a judgement call in the note, not skipped); orphaned files and exports;
+   stale doc comments narrating removed designs. Grep-verify every candidate — a "dead" symbol
+   with a reflective or string-keyed reader is a false positive that would plan a breaking task.
 3. Keep only findings worth tasking, each with file:line evidence. Skip anything an open task or
    unmerged PR already touches (`task.sh status`) — don't race live work.
 4. Nothing significant → report that and stop. Do not invent work; a near-empty sweep is the good
