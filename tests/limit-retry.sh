@@ -61,4 +61,45 @@ grep -q "Status: done" machines-at-work/tasks/0001-*/task.md || fail "task not d
 git -C app log -1 main --format=%B | grep -q "Task-Id: 0001" || fail "no squash commit on main"
 git -C app show main:wip.txt | grep -q "wip line" || fail "untracked WIP lost"
 git -C app show main:ok.txt | grep -q "tracked change" || fail "parked tracked WIP lost"
+
+# --- A limit that never clears must be BOUNDED and QUIET. Unbounded retries polled
+# one task for 3.5h and pinged Telegram on all seven attempts. The cap turns that
+# into a decision the human can act on, and the notification budget is two: the
+# first wait (explains a stalled loop) and giving up. TELEGRAM_ENV is pointed at a
+# missing file so notify.sh prints without sending anything anywhere.
+WS2="$TMP/ws2"; mkdir -p "$WS2/app" "$WS2/machines-at-work/tasks"
+git -C "$WS2" init -qb main && git -C "$WS2" config user.email t@t && git -C "$WS2" config user.name t
+git -C "$WS2/app" init -qb main
+git -C "$WS2/app" -c user.email=t@t -c user.name=t commit -qm init --allow-empty
+sed "s|../app|../app|" "$WS/machines-at-work/agents.env" > "$WS2/machines-at-work/agents.env"
+echo ok > "$WS2/app/ok.txt"
+git -C "$WS2/app" add . && git -C "$WS2/app" -c user.email=t@t -c user.name=t commit -qm "add ok"
+
+mkdir -p "$TMP/bin2"
+cat > "$TMP/bin2/claude" <<EOF
+#!/usr/bin/env bash
+FAKE_DIR="$TMP" MACHINES_AT_WORK="$MACHINES_AT_WORK" exec bash "$TMP/always-limit.sh"
+EOF
+cat > "$TMP/always-limit.sh" <<'EOF'
+#!/usr/bin/env bash
+set -euo pipefail
+n=$(cat "$FAKE_DIR/count2" 2>/dev/null || echo 0); n=$((n+1)); echo "$n" > "$FAKE_DIR/count2"
+"$MACHINES_AT_WORK/scripts/task.sh" start 0001 >/dev/null 2>&1 || true
+echo "Claude AI usage limit reached|9999999999"   # absurd epoch -> fallback backoff path
+exit 1
+EOF
+chmod +x "$TMP/bin2/claude"
+
+cd "$WS2"
+"$MACHINES_AT_WORK/scripts/task.sh" new "Never clears" >/dev/null
+rc=0
+out2=$(PATH="$TMP/bin2:$PATH" TELEGRAM_ENV=/nonexistent LIMIT_BACKOFF=1 MAX_LIMIT_RETRIES=3 MAX_TASKS=3 \
+       bash "$MACHINES_AT_WORK/scripts/loop.sh" 2>&1) || rc=$?
+[ "$rc" -eq 5 ] || fail "expected exit 5 (limit not clearing), got $rc: $out2"
+# 3 retries = 3 sessions that hit the limit, then the 4th refuses to wait again.
+[ "$(cat "$TMP/count2")" = 4 ] || fail "expected 4 claude calls, got $(cat "$TMP/count2")"
+echo "$out2" | grep -q "usage limit on 0001 (1/3)" || fail "retries must be counted: $out2"
+echo "$out2" | grep -q "still not cleared after 3 retries" || fail "no give-up line: $out2"
+pings=$(echo "$out2" | grep -c "\[notify\].*usage limit" || true)
+[ "$pings" -eq 2 ] || fail "expected 2 usage-limit notifications (first + give-up), got $pings: $out2"
 echo "LIMIT-RETRY OK"
