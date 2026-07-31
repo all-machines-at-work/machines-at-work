@@ -61,7 +61,7 @@ Every script finds the workspace on its own by walking up from the current direc
 
 ```
 agents/       implementer, reviewer            (the only standing agents)
-skills/       init-project, plan, build, design, retro, toolsmith
+skills/       init-project, plan, build, design, retro, toolsmith, unblock, cleanup
 scripts/      task.sh (lifecycle) · verify.sh (gate) · preflight.sh ·
               loop.sh (headless driver) · notify.sh (human comms seam) · lib.sh
 hooks/        guard.py — blocks force-push, push-to-default, destructive rm,
