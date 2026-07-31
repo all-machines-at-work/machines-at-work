@@ -2,7 +2,10 @@
 # Headless driver: fresh Claude context per task, deterministic task selection,
 # hard iteration + cost caps. On a Claude subscription the cost cap is skipped
 # (no per-token bill; cost is only an API-equiv estimate). A usage/rate-limit
-# exit pauses until the reset and retries the task instead of blocking it.
+# exit pauses until the reset and retries the task instead of blocking it —
+# bounded by MAX_LIMIT_RETRIES consecutive waits (exit 5 past that, since a limit
+# that hasn't cleared in that long isn't one waiting will clear), and announced
+# only on the first wait and on giving up, not on every attempt.
 # Out of credits (billing exhausted — doesn't reset on a timer) hard-stops with
 # exit 4; a human must top up or switch MODEL, so retrying is pointless.
 # A session that ends still in-progress (work committed but not merged) is driven
@@ -25,7 +28,7 @@
 # API-equivalent on a subscription) and tokens — plus a per-step wall-clock
 # breakdown (preflight / llm / verify / smoke) collected in tasks/<id>/timings.tsv
 # by the scripts themselves. Both are recorded into task.md (Cost:, Timing:).
-# Usage: MODEL=opus MAX_TASKS=5 MAX_COST_USD=15 MAX_RESUME=3 MAX_RETRIES=10 RETRY_BACKOFF=60 LIMIT_BACKOFF=1800 UPSTREAM_BACKOFF=1800 CONTINUE_ON_BLOCK=0 loop.sh
+# Usage: MODEL=opus MAX_TASKS=5 MAX_COST_USD=15 MAX_RESUME=3 MAX_RETRIES=10 RETRY_BACKOFF=60 LIMIT_BACKOFF=1800 MAX_LIMIT_RETRIES=6 UPSTREAM_BACKOFF=1800 CONTINUE_ON_BLOCK=0 loop.sh
 set -euo pipefail
 SCRIPTS="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 source "$SCRIPTS/lib.sh"
@@ -41,6 +44,11 @@ MAX_COST_USD="${MAX_COST_USD:-15}"
 MAX_RESUME="${MAX_RESUME:-3}"
 MAX_RETRIES="${MAX_RETRIES:-10}"
 RETRY_BACKOFF="${RETRY_BACKOFF:-60}"
+# A usage limit clears on a timer, so waiting is the right move — but not forever.
+# Six waits covers a normal 5-hour session window (limit_wait honours the reset
+# stamp when the CLI sends one, LIMIT_BACKOFF=30m when it doesn't); past that the
+# limit is not the kind that's about to clear and a human should decide.
+MAX_LIMIT_RETRIES="${MAX_LIMIT_RETRIES:-6}"
 BUILD_SKILL="${BUILD_SKILL:-/machines-at-work:build}"
 # Pin the model so a one-shot session never silently falls back to a cheaper
 # default. Friendly names map to what claude --model accepts.
@@ -53,6 +61,9 @@ case "$MODEL" in
 esac
 MODEL_UC=$(echo "$MODEL" | tr '[:lower:]' '[:upper:]')
 total_cost=0 n=0 retries=0 total_in=0 total_out=0 total_secs=0
+# Consecutive usage-limit waits (reset when a task finishes) and the total time
+# spent in them, for the give-up message.
+limit_retries=0 limit_waited=0
 
 # On a Claude subscription there's no per-token bill, so total_cost_usd is an
 # API-equivalent estimate, not real spend — record it but don't cap on it.
@@ -181,8 +192,21 @@ while [ "$n" -lt "$MAX_TASKS" ]; do
       # reopen if the dying session blocked it, then wait it out and rerun.
       park_wip "$id" "wip: interrupted by usage limit"
       [ "$status" = "blocked" ] && "$SCRIPTS/task.sh" reopen "$id" >/dev/null
-      echo "── usage limit on $id; retrying in $((wait / 60))m"
-      "$SCRIPTS/notify.sh" "loop.sh: usage limit — retrying task $id in $((wait / 60))m" || true
+      limit_retries=$((limit_retries + 1))
+      # Bounded, and loud only once. Unbounded retries polled a limit for 3.5h
+      # (seven waits on one task) and fired an identical Telegram ping every time,
+      # which trains the human to ignore the channel. The FIRST wait is worth a
+      # notification — it explains a stalled loop — and so is giving up; the ones
+      # in between say nothing new and stay in the log.
+      if [ "$limit_retries" -gt "$MAX_LIMIT_RETRIES" ]; then
+        echo "── stopped: usage limit on $id still not cleared after $MAX_LIMIT_RETRIES retries" >&2
+        "$SCRIPTS/notify.sh" "loop.sh stopped: usage limit on $id persisted through $MAX_LIMIT_RETRIES retries ($((limit_waited / 60))m) — relaunch when it resets, or switch model (MODEL=sonnet|fable)" || true
+        exit 5
+      fi
+      limit_waited=$((limit_waited + wait))
+      echo "── usage limit on $id ($limit_retries/$MAX_LIMIT_RETRIES); retrying in $((wait / 60))m"
+      [ "$limit_retries" -eq 1 ] && \
+        "$SCRIPTS/notify.sh" "loop.sh: usage limit — retrying task $id in $((wait / 60))m (up to $MAX_LIMIT_RETRIES tries; quiet until it clears or gives up)" || true
       sleep "$wait"
       continue
     fi
@@ -324,6 +348,10 @@ print(g("input_tokens") + g("cache_creation_input_tokens") + g("cache_read_input
     continue
   fi
   retries=0   # a task that reached a real state clears the transient-failure streak
+  # …and so does the usage-limit budget: the cap exists to stop polling a limit
+  # that is NOT clearing, so a task finishing after one proves it did clear. Only
+  # consecutive waits with no progress between them count toward the cap.
+  limit_retries=0
   n=$((n + 1))
   # Tokens ride with every cost figure: on a subscription the dollar number is an
   # estimate, the token count is what was actually spent.
