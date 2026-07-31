@@ -1,6 +1,6 @@
 # Design 2026-07-31 · The loop never de-dups: `/cleanup` sweep skill + 🧹 trigger
 
-**Status:** proposed
+**Status:** applied · 2026-07-31 · v0.31.0
 **Scope:** machines-at-work (new `skills/cleanup/SKILL.md`); server-orchestrator leg (🧹 in
 `TRIGGERS`/`dispatch`/help text) included below for reference, lands in that repo.
 
