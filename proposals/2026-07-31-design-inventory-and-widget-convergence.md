@@ -1,7 +1,7 @@
 # Design 2026-07-31 · Similar-but-not-same widgets: inventory rule in /design, convergence findings in /cleanup
 
 **Status:** applied · 2026-07-31 · v0.32.0
-**Scope:** machines-at-work only (`skills/design/SKILL.md`, `skills/cleanup/SKILL.md`).
+**Scope:** intentpipe only (`skills/design/SKILL.md`, `skills/cleanup/SKILL.md`).
 
 ## Evidence / observation
 

@@ -1,9 +1,9 @@
 # Proposal 2026-07-19 · headless /plan (for Telegram triggers)
 
-Proposal — **apply by hand in the machines-at-work repo**. Touches `skills/plan/SKILL.md`
+Proposal — **apply by hand in the intentpipe repo**. Touches `skills/plan/SKILL.md`
 only. Bump plugin version.
-Motivated by `server-orchestrator/proposals/2026-07-19-emoji-keyword-triggers.md`: the
-daemon spawns `claude -p "/machines-at-work:plan headless"` when 🧠 lands in a project's
+Motivated by `orchestrator/proposals/2026-07-19-emoji-keyword-triggers.md`: the
+daemon spawns `claude -p "/intentpipe:plan headless"` when 🧠 lands in a project's
 topic. Two steps of the plan skill assume an interactive user and would strand a headless run.
 
 ## Evidence
@@ -31,7 +31,7 @@ Interactive behavior is unchanged when the argument is absent.
 
 ## Verify
 
-`claude -p "/machines-at-work:plan headless"` in a workspace with (a) no notes → one
+`claude -p "/intentpipe:plan headless"` in a workspace with (a) no notes → one
 notify.sh message, no tasks, clean exit; (b) one queued `.inbox/` message → note drained
 and committed, tasks created, task list posted via notify.sh, no prompt ever shown.
 

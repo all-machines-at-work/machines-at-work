@@ -3,12 +3,18 @@
 set -euo pipefail
 
 # Walk up from cwd to find the workspace (dir containing agents.env — either
-# directly or in a machines-at-work/ child, so it's found from the project root and repos).
+# directly or in an intentpipe/ child, so it's found from the project root and repos).
+# machines-at-work/ is the pre-rename name, still accepted so existing workspaces
+# keep working until they're renamed.
+WORKSPACE_DIRS=(intentpipe machines-at-work)
+
 find_workspace() {
-  local dir="$PWD"
+  local dir="$PWD" child
   while [ "$dir" != "/" ]; do
     [ -f "$dir/agents.env" ] && { echo "$dir"; return 0; }
-    [ -f "$dir/machines-at-work/agents.env" ] && { echo "$dir/machines-at-work"; return 0; }
+    for child in "${WORKSPACE_DIRS[@]}"; do
+      [ -f "$dir/$child/agents.env" ] && { echo "$dir/$child"; return 0; }
+    done
     dir="$(dirname "$dir")"
   done
   echo "ERROR: no agents.env found between $PWD and /" >&2
@@ -130,7 +136,7 @@ after_done() { # after_done <branch>: fire the optional AFTER_DONE hook for work
   # tolerant because a hook is a side channel — its failure is not the task's.
   local branch="${1:-}" log
   [ -n "${AFTER_DONE:-}" ] || return 0
-  if [ -n "${MAW_LOOP:-}" ]; then
+  if [ -n "${INTENTPIPE_LOOP:-}" ]; then
     # Inside a headless loop the NEXT task starts the moment this one lands, so a
     # hook firing now would run against a tree that is about to move (and rebuild
     # once per task for a state nobody looks at). Record the branch; loop.sh fires
@@ -142,11 +148,11 @@ after_done() { # after_done <branch>: fire the optional AFTER_DONE hook for work
   log="$TASKS/_after-done.log"
   { printf '\n=== %s · %s\n' "$(date -u +%FT%TZ)" "$branch"; } >> "$log" 2>/dev/null || true
   # $1 inside the -c string, so a branch name is an argument and never re-parsed
-  # as shell by the hook command. MAW_WORKSPACE/MAW_BRANCH are for the hook that
+  # as shell by the hook command. INTENTPIPE_WORKSPACE/INTENTPIPE_BRANCH are for the hook that
   # needs them *inside* its command string (single-quote it in agents.env, which
   # is sourced long before the hook runs) — e.g. a preview refresh, which is
   # per-project and must be told which project.
-  MAW_WORKSPACE="$WS" MAW_BRANCH="$branch" \
+  INTENTPIPE_WORKSPACE="$WS" INTENTPIPE_BRANCH="$branch" \
     nohup bash -c "$AFTER_DONE \"\$1\"" after_done "$branch" >> "$log" 2>&1 &
   disown 2>/dev/null || true
   echo "[after-done] $branch → $AFTER_DONE (detached; log: $log)"
@@ -174,12 +180,12 @@ branch_has_commits() { # rc 0 if any affected repo's task branch is ahead of its
 # LLM has to cooperate, and a step that runs twice (verify in the build, again in
 # task.sh done) is simply counted twice — which is the truth.
 #
-# The target task is MAW_TIMING_ID when set (loop.sh exports it around the
+# The target task is INTENTPIPE_TIMING_ID when set (loop.sh exports it around the
 # session, so nested scripts land in the right file even as Status changes),
 # else the first in-progress task — the scaffold runs one at a time, so that is
 # the one a hand-run build is working on — else a scratch file nobody reads.
 timing_file() {
-  local id="${MAW_TIMING_ID:-}" d
+  local id="${INTENTPIPE_TIMING_ID:-}" d
   if [ -z "$id" ]; then
     for d in "$TASKS"/[0-9]*/; do
       [ -f "$d/task.md" ] || continue
@@ -203,7 +209,7 @@ timing_record() { # timing_record <step> <seconds> — never fails its caller
 
 timing_total() { # timing_total [id] -> seconds recorded so far (0 when none)
   local f
-  f=$(MAW_TIMING_ID="${1:-${MAW_TIMING_ID:-}}" timing_file 2>/dev/null) || { echo 0; return; }
+  f=$(INTENTPIPE_TIMING_ID="${1:-${INTENTPIPE_TIMING_ID:-}}" timing_file 2>/dev/null) || { echo 0; return; }
   [ -f "$f" ] || { echo 0; return; }
   awk -F'\t' '{s += $2} END {print s + 0}' "$f"
 }

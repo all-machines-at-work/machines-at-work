@@ -1,7 +1,7 @@
 # Retro 2026-07-29 · The review gate cannot falsify the task
 
-Proposal — **apply by hand in the machines-at-work repo** (the plugin is read-only inside projects;
-move this into `machines-at-work/proposals/` when applying). Touches `agents/reviewer.md` (two
+Proposal — **apply by hand in the intentpipe repo** (the plugin is read-only inside projects;
+move this into `intentpipe/proposals/` when applying). Touches `agents/reviewer.md` (two
 clauses) and `skills/plan/SKILL.md` (two clauses).
 
 ## Evidence
@@ -86,7 +86,7 @@ an unmade decision, so it reaches for the prose escape hatch instead.
 
 ```diff
 @@ line 9
- You review one task. Read `machines-at-work/tasks/<id>-<slug>/task.md` (including any files its `Resources:` field lists — a referenced mockup or screenshot is acceptance criteria in picture form; you can view images), then the diff of branch `task/<id>-<slug>` against the default branch in each affected repo (`git diff <default>...<branch>`).
+ You review one task. Read `intentpipe/tasks/<id>-<slug>/task.md` (including any files its `Resources:` field lists — a referenced mockup or screenshot is acceptance criteria in picture form; you can view images), then the diff of branch `task/<id>-<slug>` against the default branch in each affected repo (`git diff <default>...<branch>`).
 +Also read the note the task was planned from — `git -C <workspace> show <task.md's `Intent:` sha>`. That is the human's words; task.md is only the plan's reading of them, and the reading is what fails.
 @@ line 11
 -Scope — report ONLY: correctness bugs, security issues, unmet or gamed acceptance criteria (especially weakened/deleted/tautological tests), dead or duplicated code. NOT style, naming, hypothetical scale, or rewrites you'd prefer.

@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """PreToolUse guard: deterministic safety rails.
 Blocks: force-push, push to main/master, destructive rm, and any edit to the
-machines-at-work plugin itself (self-modification must go through /machines-at-work:retro proposals).
+intentpipe plugin itself (self-modification must go through /intentpipe:retro proposals).
 Exempt: dev sessions — when the session cwd is inside the plugin root, the
 plugin is the thing being developed, not used, so edits are allowed.
 Exit 2 = block (stderr goes to the agent). Exit 0 = allow.
@@ -21,7 +21,7 @@ BASH_DENY = [
 ]
 
 def deny(reason: str) -> None:
-    print(f"BLOCKED by machines-at-work guard: {reason}", file=sys.stderr)
+    print(f"BLOCKED by intentpipe guard: {reason}", file=sys.stderr)
     sys.exit(2)
 
 def main() -> None:
@@ -43,7 +43,7 @@ def main() -> None:
             dev_session = cwd == root or cwd.startswith(root + os.sep)
             path = os.path.realpath(tin.get("file_path", ""))
             if not dev_session and path.startswith(root + os.sep):
-                deny("the machines-at-work plugin is read-only inside projects; use /machines-at-work:retro to propose changes")
+                deny("the intentpipe plugin is read-only inside projects; use /intentpipe:retro to propose changes")
 
     sys.exit(0)
 

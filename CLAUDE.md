@@ -1,6 +1,6 @@
-# Machines at Work repo (plugin development)
+# Intentpipe repo (plugin development)
 
-You are editing machines-at-work itself, not using it. Read `DESIGN.md` before changing behavior — every decision there has a reason.
+You are editing intentpipe itself, not using it. Read `DESIGN.md` before changing behavior — every decision there has a reason.
 
 Rules:
 - Concision is a feature: agent/skill prompts earn every line ("would removing this cause a mistake?"). CLAUDE.mds < 200 lines.

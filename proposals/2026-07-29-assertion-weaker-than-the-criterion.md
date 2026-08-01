@@ -1,7 +1,7 @@
 # Retro 2026-07-29 · The assertion is weaker than the criterion it is cited for
 
-Proposal — **apply by hand in the machines-at-work repo** (the plugin is read-only inside projects;
-move this into `machines-at-work/proposals/` when applying). Touches `agents/implementer.md` (rule
+Proposal — **apply by hand in the intentpipe repo** (the plugin is read-only inside projects;
+move this into `intentpipe/proposals/` when applying). Touches `agents/implementer.md` (rule
 8) and `agents/reviewer.md` (the severity line).
 
 ## Evidence
