@@ -14,13 +14,11 @@ set -euo pipefail
 shopt -s nullglob
 
 # Find the workspace (dir holding agents.env — directly or in an
-# intentpipe/ child), same walk-up as notify.sh. machines-at-work/ is the
-# pre-rename name, still accepted.
+# intentpipe/ child), same walk-up as notify.sh.
 dir="$PWD"; ws=""
 while [ "$dir" != "/" ]; do
   if [ -f "$dir/agents.env" ]; then ws="$dir"; break; fi
   if [ -f "$dir/intentpipe/agents.env" ]; then ws="$dir/intentpipe"; break; fi
-  if [ -f "$dir/machines-at-work/agents.env" ]; then ws="$dir/machines-at-work"; break; fi
   dir="$(dirname "$dir")"
 done
 [ -n "$ws" ] || { echo "[inbound] no workspace found; nothing to drain" >&2; exit 0; }
@@ -32,8 +30,8 @@ inbox="$ws/updates/.inbox"
 # workspace is either an intentpipe/ child of the project or the project
 # root itself.
 case "$(basename "$ws")" in
-  intentpipe|machines-at-work) rel="$(basename "$ws")/resources" ;;
-  *)                           rel="resources" ;;
+  intentpipe) rel="intentpipe/resources" ;;
+  *)          rel="resources" ;;
 esac
 
 # Images first: the server drops a photo as <epoch>-<msgid>.<ext> next to its
