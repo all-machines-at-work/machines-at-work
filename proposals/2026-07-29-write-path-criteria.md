@@ -1,6 +1,6 @@
 # Retro 2026-07-29 · tasks that write to a server are specified only for the write succeeding
 
-Proposal — **apply by hand in the machines-at-work repo**: `skills/plan/SKILL.md`, one bullet.
+Proposal — **apply by hand in the intentpipe repo**: `skills/plan/SKILL.md`, one bullet.
 Evidence window: tasks 0043–0121. Includes this retro's "observed, no action" list at the end.
 
 ## Evidence
@@ -126,8 +126,8 @@ One-offs and known-but-not-worth-a-prompt-line items from tasks 0043–0121.
   `frontend/test/creature_frame_test.dart:57` (0055); the sanitizer regex turning `2*3*4` into `234`
   (0094, fixed in round 2); dead `theme`/`tokens` parameters in `sell_sheet.dart:136` (0092);
   `_upsert_summary` NULLing an embedding column on the weekly/monthly path (0105).
-- **Empty `.claude/agent-memory/` directories** at `machines-at-work/tasks/` and
-  `machines-at-work/tasks/0108-…/` — symptoms of the cwd fork, covered by proposal 1.
+- **Empty `.claude/agent-memory/` directories** at `intentpipe/tasks/` and
+  `intentpipe/tasks/0108-…/` — symptoms of the cwd fork, covered by proposal 1.
 - **No cost or timing outliers in the window.** Every recorded cost since 0019 reads `subscription`
   (largest API-equivalent estimate ~$22.7); the one dollar outlier on record, `$25.29` on task 0014,
   predates the last retro. 68 of 121 task.md files record no cost at all (`Cost: -`) — a gap, but a

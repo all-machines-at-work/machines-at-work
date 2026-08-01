@@ -1,7 +1,7 @@
 # Intent notes
 
 Drop a note here — any shape, any filename — describing what you want built or changed.
-`/machines-at-work:plan` turns notes into tasks and commits your words to git history; that history
+`/intentpipe:plan` turns notes into tasks and commits your words to git history; that history
 is the record of intent. There is no living spec document to maintain.
 
 A good note carries, in whatever form fits:
@@ -11,8 +11,8 @@ A good note carries, in whatever form fits:
 - **How it's proven** — the commands or flows that show a finished result works end-to-end.
 
 A note can carry **images**: a photo texted into the project's Telegram topic is saved under
-`machines-at-work/resources/` and its caption becomes a note referencing it (`[image: …]`).
-`/machines-at-work:plan` reads the image itself — a mockup, a screenshot of a bug, a sketch —
+`intentpipe/resources/` and its caption becomes a note referencing it (`[image: …]`).
+`/intentpipe:plan` reads the image itself — a mockup, a screenshot of a bug, a sketch —
 and the tasks it spawns record the path (`Resources:`) so the implementer and reviewer see the
 same picture. Dropping a file into `resources/` by hand and referencing it from a note works
 identically. Unlike notes, resource files are never deleted.
@@ -21,5 +21,5 @@ A note can also amend work sitting in a **still-open PR** — name the PR or fea
 tasks land on its branch, so the same PR picks them up. Once that PR merges, the window closes
 automatically; the note becomes a fresh task instead.
 
-Notes are consumed by `/machines-at-work:plan` and removed from this folder once planned; recover any
-past note from git history. This folder and its README stay; `/machines-at-work:plan` ignores the README.
+Notes are consumed by `/intentpipe:plan` and removed from this folder once planned; recover any
+past note from git history. This folder and its README stay; `/intentpipe:plan` ignores the README.

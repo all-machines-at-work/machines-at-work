@@ -1,7 +1,7 @@
 # Design 2026-07-31 · The loop never de-dups: `/cleanup` sweep skill + 🧹 trigger
 
 **Status:** applied · 2026-07-31 · v0.31.0
-**Scope:** machines-at-work (new `skills/cleanup/SKILL.md`); server-orchestrator leg (🧹 in
+**Scope:** intentpipe (new `skills/cleanup/SKILL.md`); server-orchestrator leg (🧹 in
 `TRIGGERS`/`dispatch`/help text) included below for reference, lands in that repo.
 
 ## Evidence / observation
@@ -72,8 +72,8 @@ normal pipeline (/plan → tasks → verify → review).
 Headless mode — when $ARGUMENTS contains `headless`: never prompt; step 5's summary goes through
 `${CLAUDE_PLUGIN_ROOT}/scripts/notify.sh` as well as stdout.
 
-1. Read machines-at-work/agents.env (`REPOS`). Find the last cleanup note (`git log --oneline --
-   machines-at-work/updates/` for `cleanup-`); skim `tasks/*/review.md` nits since then —
+1. Read intentpipe/agents.env (`REPOS`). Find the last cleanup note (`git log --oneline --
+   intentpipe/updates/` for `cleanup-`); skim `tasks/*/review.md` nits since then —
    duplication/dead-code nits are pre-verified leads.
 2. Sweep each repo for: symbols with zero readers outside their own definition; near-identical
    logic at ≥2 call sites worth one shared helper; orphaned files and exports; stale doc comments
@@ -83,7 +83,7 @@ Headless mode — when $ARGUMENTS contains `headless`: never prompt; step 5's su
    unmerged PR already touches (`task.sh status`) — don't race live work.
 4. Nothing significant → report that and stop. Do not invent work; a near-empty sweep is the good
    outcome.
-5. Else write ONE note `machines-at-work/updates/cleanup-<date>.md`: per finding, the evidence and
+5. Else write ONE note `intentpipe/updates/cleanup-<date>.md`: per finding, the evidence and
    the intended action (delete / extract shared helper), plus the standing constraints — behaviour-
    preserving only, verify green, no test deleted to make a removal pass, judgement calls listed in
    task Notes (bibbles 0105 is the model). Sized for /plan to cut into 1–2 tasks. Report ≤5 lines;
@@ -103,10 +103,10 @@ Never edit repo code, never write tasks/ directly — the human gates the plan.
 
 ```diff
      elif action == "retro":
-         cmd, ack = ["claude", "-p", "/machines-at-work:retro headless", *PLAN_CLAUDE_FLAGS], \
+         cmd, ack = ["claude", "-p", "/intentpipe:retro headless", *PLAN_CLAUDE_FLAGS], \
                     "📋 retro — mining finished tasks; proposals will post back…"
 +    elif action == "cleanup":
-+        cmd, ack = ["claude", "-p", "/machines-at-work:cleanup headless", *PLAN_CLAUDE_FLAGS], \
++        cmd, ack = ["claude", "-p", "/intentpipe:cleanup headless", *PLAN_CLAUDE_FLAGS], \
 +                   "🧹 sweeping for dead/duplicated code — findings land as an updates/ note…"
 ```
 

@@ -7,7 +7,7 @@ msg="${*:?usage: notify.sh <message>}"
 echo "[notify] $msg"
 
 if [ "$(uname)" = "Darwin" ]; then
-  osascript -e "display notification \"${msg//\"/}\" with title \"Machines at Work\"" 2>/dev/null || true
+  osascript -e "display notification \"${msg//\"/}\" with title \"Intentpipe\"" 2>/dev/null || true
 fi
 
 # Telegram: shared bot creds from a global file, per-project topic from agents.env.
@@ -20,6 +20,9 @@ while [ "$dir" != "/" ]; do
   # shellcheck disable=SC1090
   if [ -f "$dir/agents.env" ]; then . "$dir/agents.env"; break; fi
   # shellcheck disable=SC1090
+  if [ -f "$dir/intentpipe/agents.env" ]; then . "$dir/intentpipe/agents.env"; break; fi
+  # shellcheck disable=SC1090
+  # pre-rename workspace name, still accepted
   if [ -f "$dir/machines-at-work/agents.env" ]; then . "$dir/machines-at-work/agents.env"; break; fi
   dir="$(dirname "$dir")"
 done

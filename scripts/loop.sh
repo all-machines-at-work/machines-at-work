@@ -36,8 +36,9 @@ source "$SCRIPTS/lib.sh"
 # every launcher must agree on one directory or the implementer's and reviewer's
 # lessons fork per launcher (proposals/2026-07-29-agent-memory-forks-by-cwd.md).
 # That directory is the project root — the workspace's parent when state lives in
-# a machines-at-work/ child, the workspace itself in the flat layout.
-case "$(basename "$WS")" in machines-at-work) cd "$(dirname "$WS")" ;; *) cd "$WS" ;; esac
+# an intentpipe/ child (or a pre-rename machines-at-work/ one), the workspace
+# itself in the flat layout.
+case "$(basename "$WS")" in intentpipe|machines-at-work) cd "$(dirname "$WS")" ;; *) cd "$WS" ;; esac
 
 MAX_TASKS="${MAX_TASKS:-5}"
 MAX_COST_USD="${MAX_COST_USD:-15}"
@@ -49,7 +50,7 @@ RETRY_BACKOFF="${RETRY_BACKOFF:-60}"
 # stamp when the CLI sends one, LIMIT_BACKOFF=30m when it doesn't); past that the
 # limit is not the kind that's about to clear and a human should decide.
 MAX_LIMIT_RETRIES="${MAX_LIMIT_RETRIES:-6}"
-BUILD_SKILL="${BUILD_SKILL:-/machines-at-work:build}"
+BUILD_SKILL="${BUILD_SKILL:-/intentpipe:build}"
 # Pin the model so a one-shot session never silently falls back to a cheaper
 # default. Friendly names map to what claude --model accepts.
 MODEL="${MODEL:-opus}"
@@ -75,7 +76,7 @@ SUBSCRIPTION=
 errf=$(mktemp); trap 'rm -f "$errf"' EXIT
 # Inherited by every script the session runs: tells task.sh that a landed task's
 # AFTER_DONE hook belongs to the END of this run, not to the moment it lands.
-export MAW_LOOP=1
+export INTENTPIPE_LOOP=1
 
 # The run's closing summary. Also used by the pre-preflight peek below, so an
 # early exit reports exactly the way a completed run does.
@@ -87,7 +88,7 @@ finish_notify() {
   # here, including the ones that build nothing (no file, no hook).
   pending="$TASKS/_after-done.pending"
   if [ -f "$pending" ]; then
-    MAW_LOOP= after_done "$(cat "$pending")"
+    INTENTPIPE_LOOP= after_done "$(cat "$pending")"
     rm -f "$pending"
   fi
   run_toks="$(fmt_k $((total_in + total_out))) tok"
@@ -166,9 +167,9 @@ while [ "$n" -lt "$MAX_TASKS" ]; do
   echo "══ task $id (task $((n + 1))/$MAX_TASKS, spent $spent)"
   echo "Solving task with $MODEL_UC"
   resume=0; task_cost=0; task_in=0; task_out=0; fail_reason=""; prompt="$BUILD_SKILL $id"
-  # MAW_TIMING_ID pins every script the session runs (preflight/verify) to this
+  # INTENTPIPE_TIMING_ID pins every script the session runs (preflight/verify) to this
   # task's timings.tsv, whatever its Status has become by then.
-  export MAW_TIMING_ID="$id"
+  export INTENTPIPE_TIMING_ID="$id"
   while :; do
     before=$(branch_head "$id")   # branch tips before the session, to detect a no-op resume
     rc=0
@@ -326,7 +327,7 @@ print(g("input_tokens") + g("cache_creation_input_tokens") + g("cache_read_input
   done
   total_cost=$(python3 -c "print(round($total_cost + $task_cost, 2))")
   total_in=$((total_in + task_in)); total_out=$((total_out + task_out))
-  unset MAW_TIMING_ID
+  unset INTENTPIPE_TIMING_ID
   # Env failure with no work done: claude errored before anything was committed —
   # status still todo (never started), or in-progress on a zero-commit branch (a
   # drop right after task.sh start). No network, a stranded tree, a crash. Not the

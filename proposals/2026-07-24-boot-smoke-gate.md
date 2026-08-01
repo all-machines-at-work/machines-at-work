@@ -1,7 +1,7 @@
 # Design 2026-07-24 · Verify never boots the app: optional `SMOKE_<repo>` gate
 
 **Status:** applied · 2026-07-24 · v0.23.0
-**Scope:** machines-at-work only; the project side (a `tyf-api` healthcheck so `--wait` means *serving*, plus `SMOKE_core`) lands in tell-your-friends.
+**Scope:** intentpipe only; the project side (a `tyf-api` healthcheck so `--wait` means *serving*, plus `SMOKE_core`) lands in tell-your-friends.
 
 ## Evidence / observation
 

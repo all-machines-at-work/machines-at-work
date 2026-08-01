@@ -38,13 +38,15 @@ for repo in $REPOS; do
   fi
   verify_cmd "$repo" >/dev/null || err=1
 done
-[ -d "$TASKS" ] || { echo "FAIL: no tasks/ dir (run /machines-at-work:init-project)" >&2; err=1; }
+[ -d "$TASKS" ] || { echo "FAIL: no tasks/ dir (run /intentpipe:init-project)" >&2; err=1; }
 # The agents' `memory: project` store resolves from the session's cwd. A store
 # anywhere but the project root means some launcher ran from the wrong directory
 # — the lessons written there are invisible to every other launcher
 # (proposals/2026-07-29-agent-memory-forks-by-cwd.md). Hard-fail until merged.
 strays=("$TASKS/.claude/agent-memory" "$TASKS"/*/.claude/agent-memory)
-[ "$(basename "$WS")" != "machines-at-work" ] || strays+=("$WS/.claude/agent-memory")
+case "$(basename "$WS")" in
+  intentpipe|machines-at-work) strays+=("$WS/.claude/agent-memory") ;;
+esac
 for stray in "${strays[@]}"; do
   [ ! -d "$stray" ] || { echo "FAIL: agent memory forked into $stray — merge its files into the project root's .claude/agent-memory and delete it" >&2; err=1; }
 done

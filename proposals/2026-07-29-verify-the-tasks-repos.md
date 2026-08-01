@@ -1,7 +1,7 @@
 # Retro 2026-07-29 · Verify runs every repo, including the ones the task declares out of scope
 
-Proposal — **apply by hand in the machines-at-work repo** (the plugin is read-only inside projects;
-move this into `machines-at-work/proposals/` when applying). Touches `agents/implementer.md` (rule
+Proposal — **apply by hand in the intentpipe repo** (the plugin is read-only inside projects;
+move this into `intentpipe/proposals/` when applying). Touches `agents/implementer.md` (rule
 4), `scripts/task.sh` (one line), and a clarifying line in `DESIGN.md` #33. `scripts/verify.sh`
 itself needs no change — it already takes the argument.
 

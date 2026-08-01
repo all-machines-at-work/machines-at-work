@@ -1,10 +1,10 @@
 {
-  "name": "machines-at-work",
+  "name": "intentpipe",
   "owner": { "name": "Ivan Spirandelli" },
-  "description": "Personal marketplace for Machines at Work.",
+  "description": "Personal marketplace for Intentpipe.",
   "plugins": [
     {
-      "name": "machines-at-work",
+      "name": "intentpipe",
       "source": "./",
       "description": "Spec-driven autonomous development pipeline."
     }

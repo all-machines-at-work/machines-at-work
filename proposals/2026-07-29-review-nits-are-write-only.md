@@ -1,6 +1,6 @@
 # Retro 2026-07-29 · a reviewer's nit has no reader, so known defects reach the user
 
-Proposal — **apply by hand in the machines-at-work repo**: `scripts/task.sh` (new read-only
+Proposal — **apply by hand in the intentpipe repo**: `scripts/task.sh` (new read-only
 subcommand) and `skills/plan/SKILL.md` (one sentence). Evidence window: tasks 0043–0121.
 
 ## Evidence
@@ -95,8 +95,8 @@ and the `# Usage` line (task.sh:3), which `usage()` prints verbatim:
 **2. `skills/plan/SKILL.md` step 2 — one sentence, appended.**
 
 ```diff
--2. Read the notes, `machines-at-work/tasks/_log.md`, and `${CLAUDE_PLUGIN_ROOT}/scripts/task.sh status` output. Plan only what the notes ask for
-+2. Read the notes, `machines-at-work/tasks/_log.md`, and `${CLAUDE_PLUGIN_ROOT}/scripts/task.sh status` output. Also run `${CLAUDE_PLUGIN_ROOT}/scripts/task.sh nits` — the build never re-loops a nit (DESIGN #5), so this is the only place they are triaged: fold the ones that touch code a note in this run already changes into that task's criteria, and name the rest you are consciously leaving. Plan only what the notes ask for
+-2. Read the notes, `intentpipe/tasks/_log.md`, and `${CLAUDE_PLUGIN_ROOT}/scripts/task.sh status` output. Plan only what the notes ask for
++2. Read the notes, `intentpipe/tasks/_log.md`, and `${CLAUDE_PLUGIN_ROOT}/scripts/task.sh status` output. Also run `${CLAUDE_PLUGIN_ROOT}/scripts/task.sh nits` — the build never re-loops a nit (DESIGN #5), so this is the only place they are triaged: fold the ones that touch code a note in this run already changes into that task's criteria, and name the rest you are consciously leaving. Plan only what the notes ask for
 ```
 
 Does the sentence pull its weight? It is the *only* reader `review.md` would have; delete it and
