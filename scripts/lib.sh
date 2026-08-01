@@ -4,17 +4,11 @@ set -euo pipefail
 
 # Walk up from cwd to find the workspace (dir containing agents.env — either
 # directly or in an intentpipe/ child, so it's found from the project root and repos).
-# machines-at-work/ is the pre-rename name, still accepted so existing workspaces
-# keep working until they're renamed.
-WORKSPACE_DIRS=(intentpipe machines-at-work)
-
 find_workspace() {
-  local dir="$PWD" child
+  local dir="$PWD"
   while [ "$dir" != "/" ]; do
     [ -f "$dir/agents.env" ] && { echo "$dir"; return 0; }
-    for child in "${WORKSPACE_DIRS[@]}"; do
-      [ -f "$dir/$child/agents.env" ] && { echo "$dir/$child"; return 0; }
-    done
+    [ -f "$dir/intentpipe/agents.env" ] && { echo "$dir/intentpipe"; return 0; }
     dir="$(dirname "$dir")"
   done
   echo "ERROR: no agents.env found between $PWD and /" >&2

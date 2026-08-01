@@ -21,9 +21,6 @@ while [ "$dir" != "/" ]; do
   if [ -f "$dir/agents.env" ]; then . "$dir/agents.env"; break; fi
   # shellcheck disable=SC1090
   if [ -f "$dir/intentpipe/agents.env" ]; then . "$dir/intentpipe/agents.env"; break; fi
-  # shellcheck disable=SC1090
-  # pre-rename workspace name, still accepted
-  if [ -f "$dir/machines-at-work/agents.env" ]; then . "$dir/machines-at-work/agents.env"; break; fi
   dir="$(dirname "$dir")"
 done
 

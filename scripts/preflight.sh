@@ -44,9 +44,7 @@ done
 # — the lessons written there are invisible to every other launcher
 # (proposals/2026-07-29-agent-memory-forks-by-cwd.md). Hard-fail until merged.
 strays=("$TASKS/.claude/agent-memory" "$TASKS"/*/.claude/agent-memory)
-case "$(basename "$WS")" in
-  intentpipe|machines-at-work) strays+=("$WS/.claude/agent-memory") ;;
-esac
+[ "$(basename "$WS")" != "intentpipe" ] || strays+=("$WS/.claude/agent-memory")
 for stray in "${strays[@]}"; do
   [ ! -d "$stray" ] || { echo "FAIL: agent memory forked into $stray — merge its files into the project root's .claude/agent-memory and delete it" >&2; err=1; }
 done
