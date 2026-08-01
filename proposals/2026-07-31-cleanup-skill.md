@@ -1,7 +1,7 @@
 # Design 2026-07-31 · The loop never de-dups: `/cleanup` sweep skill + 🧹 trigger
 
 **Status:** applied · 2026-07-31 · v0.31.0
-**Scope:** intentpipe (new `skills/cleanup/SKILL.md`); server-orchestrator leg (🧹 in
+**Scope:** intentpipe (new `skills/cleanup/SKILL.md`); orchestrator leg (🧹 in
 `TRIGGERS`/`dispatch`/help text) included below for reference, lands in that repo.
 
 ## Evidence / observation
@@ -92,7 +92,7 @@ Headless mode — when $ARGUMENTS contains `headless`: never prompt; step 5's su
 Never edit repo code, never write tasks/ directly — the human gates the plan.
 ```
 
-### server-orchestrator leg (reference — lands in that repo)
+### orchestrator leg (reference — lands in that repo)
 
 ```diff
  TRIGGERS = {"🧠": "plan", "plan": "plan", "🚀": "loop", "build-all": "loop",

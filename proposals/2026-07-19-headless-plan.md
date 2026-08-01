@@ -2,7 +2,7 @@
 
 Proposal — **apply by hand in the intentpipe repo**. Touches `skills/plan/SKILL.md`
 only. Bump plugin version.
-Motivated by `server-orchestrator/proposals/2026-07-19-emoji-keyword-triggers.md`: the
+Motivated by `orchestrator/proposals/2026-07-19-emoji-keyword-triggers.md`: the
 daemon spawns `claude -p "/intentpipe:plan headless"` when 🧠 lands in a project's
 topic. Two steps of the plan skill assume an interactive user and would strand a headless run.
 

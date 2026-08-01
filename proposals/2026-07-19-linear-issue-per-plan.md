@@ -1,7 +1,7 @@
 # Linear issue per plan run (opt-in)
 
 **Status:** proposed · 2026-07-19
-**Scope:** intentpipe only (Linear linking is branch/PR-side; the server-orchestrator is not involved).
+**Scope:** intentpipe only (Linear linking is branch/PR-side; the orchestrator is not involved).
 
 ## Want
 

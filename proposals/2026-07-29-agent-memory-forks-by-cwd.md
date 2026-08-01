@@ -1,7 +1,7 @@
 # Retro 2026-07-29 · agent memory forks by working directory, so lessons stop being delivered
 
 Proposal — **apply by hand**: `intentpipe/scripts/{loop.sh,preflight.sh}` and
-`server-orchestrator/daemon.py` (both read-only inside projects). Evidence window: tasks 0043–0121
+`orchestrator/daemon.py` (both read-only inside projects). Evidence window: tasks 0043–0121
 (everything merged after the 2026-07-08 reports).
 
 ## Evidence
@@ -62,7 +62,7 @@ pipeline ever normalizes that directory:
   scripts; it also means cwd is never pinned.
 - `scripts/loop.sh:15` — the comment says "Run from the project root", but nothing enforces it, and
   line 162 invokes `claude -p` with whatever cwd it inherited.
-- `server-orchestrator/daemon.py` — `dispatch()` does
+- `orchestrator/daemon.py` — `dispatch()` does
   `name, workspace = entry["name"], entry["workspace"]` … `spawn_detached(cmd, workspace, base, …)`,
   and `~/.agent-orchestrator/registry.json` sets
   `"workspace": "/home/agent/projects/bibbles/intentpipe"`. So **every** 🚀 / 🧠 / 🩹 run has
@@ -87,7 +87,7 @@ Three parts. (1) and (2) stop new forks; (3) makes a fork impossible to miss.
 +cd "$(dirname "$WS")"
 ```
 
-**2. `server-orchestrator/daemon.py` — spawn triggers from the project root, not the workspace.**
+**2. `orchestrator/daemon.py` — spawn triggers from the project root, not the workspace.**
 
 ```diff
      try:
