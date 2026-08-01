@@ -81,6 +81,9 @@ export INTENTPIPE_LOOP=1
 # early exit reports exactly the way a completed run does.
 finish_notify() {
   local run_toks spent pending
+  # Land the run's workspace-state commits (task records, memory, logs) before
+  # summarising: PR + automerge when state-only. Tolerant — never fails the run.
+  "$SCRIPTS/state-land.sh" || true
   # Fire the workspace's AFTER_DONE hook once, for the branch that landed LAST —
   # task.sh only records it while a loop is running (lib.sh), because a hook that
   # checks branches out would fight the next task. Every exit path comes through
