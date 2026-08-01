@@ -654,6 +654,58 @@ grep -q '^verify:app	' intentpipe/tasks/"$t4"-*/timings.tsv \
   || fail "a gate run inside the session must land in that task's timings.tsv"
 cd "$WS"
 
+# --- state-land.sh: PR + automerge for state-only diffs, via a stub gh that
+# records calls; a bare "origin" stands in for GitHub.
+SL="$TMP/sl"; mkdir -p "$SL/bin"
+GHLOG="$SL/gh.log"
+cat > "$SL/bin/gh" <<EOF
+#!/usr/bin/env bash
+echo "\$*" >> "$GHLOG"
+case "\$1 \$2" in
+  "pr view")   exit 1 ;;                       # no existing PR → create path
+  "pr create") echo "https://example.test/pr/1" ;;
+  "pr merge")  exit 0 ;;
+esac
+EOF
+chmod +x "$SL/bin/gh"
+git init -q --bare "$SL/origin.git"
+git -C "$WS" remote add origin "$SL/origin.git" 2>/dev/null || git -C "$WS" remote set-url origin "$SL/origin.git"
+git -C "$WS" add intentpipe && git -C "$WS" -c user.email=t@t -c user.name=t commit -qm base
+git -C "$WS" push -qu origin main
+git -C "$WS" symbolic-ref refs/remotes/origin/HEAD refs/remotes/origin/main
+
+# nothing ahead → no-op, no gh call
+out=$(PATH="$SL/bin:$PATH" "$INTENTPIPE/scripts/state-land.sh")
+echo "$out" | grep -q "nothing ahead" || fail "state-land: clean tree must be a no-op"
+[ ! -f "$GHLOG" ] || fail "state-land: no-op must not call gh"
+
+# state-only commits on the default branch → state/ branch, PR, automerge,
+# local main back in sync, no stray branch
+echo "note" > intentpipe/updates/tg-1-1.md
+git -C "$WS" add intentpipe/updates && git -C "$WS" -c user.email=t@t -c user.name=t commit -qm "state: note"
+out=$(PATH="$SL/bin:$PATH" "$INTENTPIPE/scripts/state-land.sh")
+echo "$out" | grep -q "state landed and merged" || fail "state-land: state-only diff must automerge"
+grep -q "pr merge" "$GHLOG" || fail "state-land: merge was not attempted"
+[ "$(git -C "$WS" rev-parse --abbrev-ref HEAD)" = "main" ] || fail "state-land: must end back on main"
+[ -z "$(git -C "$WS" branch --list 'state/*')" ] || fail "state-land: state/ branch left behind"
+# the stub cannot merge on the server, so realign the bare origin for the next case
+git -C "$WS" push -q origin main
+
+# a non-state path in the diff → PR opened but NOT merged
+: > "$GHLOG"
+echo x > app-config.txt
+git -C "$WS" add app-config.txt && git -C "$WS" -c user.email=t@t -c user.name=t commit -qm "config drift"
+out=$(PATH="$SL/bin:$PATH" "$INTENTPIPE/scripts/state-land.sh")
+echo "$out" | grep -q "left for the human" || fail "state-land: non-state diff must not automerge"
+grep -q "pr merge" "$GHLOG" && fail "state-land: merged a non-state diff" || true
+grep -q "non-state path in diff: app-config.txt" <<<"$out" || fail "state-land: must name the foreign path"
+# clean up for the guard section: back to a synced main
+git -C "$WS" checkout -q main 2>/dev/null || true
+git -C "$WS" reset -q --hard origin/main
+git -C "$WS" push -q origin --delete "$(git -C "$WS" branch -r | grep 'origin/state/' | sed 's|.*origin/||' | head -1)" 2>/dev/null || true
+git -C "$WS" remote remove origin
+echo "[smoke] state-land.sh ok"
+
 # --- guard hook
 g() { echo "$1" | python3 "$INTENTPIPE/hooks/guard.py" >/dev/null 2>&1; }
 g '{"tool_name":"Bash","tool_input":{"command":"git push --force origin x"}}' && fail "guard: force push allowed" || true

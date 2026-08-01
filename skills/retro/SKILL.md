@@ -18,6 +18,6 @@ Headless mode — when $ARGUMENTS contains `headless` (Telegram-triggered, nobod
    - **Proposed change:** exact diff against the intentpipe repo (agent prompt, skill, script, or hook) — the smaller the better. Prompt additions must pull their weight: would removing this line cause the mistake to recur?
    - **Risk:** what this change could regress.
 5. One-off mistakes are not patterns — list them under "observed, no action" and move on.
-6. Commit the new report files in the workspace repo (`retro: <date> — <one-line summary>`; only the retro files, nothing else), then tell the user which proposals exist and your confidence in each.
+6. Commit the new report files in the workspace repo (`retro: <date> — <one-line summary>`; only the retro files, nothing else), run `${CLAUDE_PLUGIN_ROOT}/scripts/state-land.sh` (PR + automerge for the state-only diff), then tell the user which proposals exist and your confidence in each.
 
 Never edit files under the plugin root. Never edit agents' memory directly.
