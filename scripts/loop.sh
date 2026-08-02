@@ -8,6 +8,9 @@
 # only on the first wait and on giving up, not on every attempt.
 # Out of credits (billing exhausted — doesn't reset on a timer) hard-stops with
 # exit 4; a human must top up or switch MODEL, so retrying is pointless.
+# Every retry of the SAME task (limit wait, transient drop, in-progress resume)
+# re-invokes with --resume on the dead session's id, so it continues that
+# conversation instead of re-orienting from zero; fresh context stays per-task.
 # A session that ends still in-progress (work committed but not merged) is driven
 # to a terminal state: finished deterministically when the branch is green +
 # committed (review approved, or a resume that stalled — so it is never blocked
@@ -168,7 +171,7 @@ while [ "$n" -lt "$MAX_TASKS" ]; do
   if [ -n "$SUBSCRIPTION" ]; then spent="subscription"; else spent="\$$total_cost"; fi
   echo "══ task $id (task $((n + 1))/$MAX_TASKS, spent $spent)"
   echo "Solving task with $MODEL_UC"
-  resume=0; task_cost=0; task_in=0; task_out=0; fail_reason=""; prompt="$BUILD_SKILL $id"
+  resume=0; task_cost=0; task_in=0; task_out=0; fail_reason=""; prompt="$BUILD_SKILL $id"; sid=""
   # INTENTPIPE_TIMING_ID pins every script the session runs (preflight/verify) to this
   # task's timings.tsv, whatever its Status has become by then.
   export INTENTPIPE_TIMING_ID="$id"
@@ -180,6 +183,7 @@ while [ "$n" -lt "$MAX_TASKS" ]; do
     # timings.tsv stay non-overlapping — their sum is the task's real total.
     sess_t0=$(date +%s); scripted_before=$(timing_total "$id")
     out=$(claude -p "$prompt" \
+          ${sid:+--resume "$sid"} \
           --model "$MODEL_ARG" \
           --permission-mode acceptEdits \
           --allowedTools "Bash,Read,Edit,Write,Glob,Grep,Agent,Skill,TodoWrite" \
@@ -188,6 +192,15 @@ while [ "$n" -lt "$MAX_TASKS" ]; do
     scripted=$(( $(timing_total "$id") - scripted_before ))
     [ "$scripted" -ge 0 ] && [ "$scripted" -le "$sess_secs" ] || scripted=0
     timing_record llm "$(( sess_secs - scripted ))"
+    # The envelope's session_id: any retry of the SAME task below (limit wait,
+    # transient drop with commits, in-progress resume) --resumes it, continuing
+    # the conversation — files read, plan, partial work — instead of paying full
+    # re-orientation in a fresh context. Fresh context stays per-TASK; only
+    # within-task retries reuse. Unparseable output keeps the previous id:
+    # resuming the last session that produced one still beats starting over.
+    # (--resume forks to a new id, so each attempt re-captures.)
+    newsid=$(echo "$out" | python3 -c 'import json,sys; print(json.load(sys.stdin).get("session_id") or "")' 2>/dev/null) || newsid=""
+    [ -n "$newsid" ] && sid="$newsid"
     dir=$(task_dir "$id"); status=$(get_field "$dir/task.md" Status)
     if [ "$rc" -ne 0 ] && [ "$status" != "done" ] && [ "$status" != "pr" ] \
        && wait=$(limit_wait "$out"$'\n'"$(cat "$errf")"); then
@@ -235,7 +248,7 @@ except Exception: pass' 2>/dev/null)"$'\n'"$(cat "$errf")"; then
         park_wip "$id" "wip: interrupted by transient API error" || true
       else
         "$SCRIPTS/task.sh" abandon "$id" >/dev/null 2>&1 || true
-        resume=0; prompt="$BUILD_SKILL $id"   # empty branch is gone; start fresh
+        resume=0; prompt="$BUILD_SKILL $id"; sid=""   # empty branch is gone; start fresh
       fi
       retries=$((retries + 1))
       if [ "$retries" -ge "$MAX_RETRIES" ]; then
