@@ -662,9 +662,12 @@ cat > "$SL/bin/gh" <<EOF
 #!/usr/bin/env bash
 echo "\$*" >> "$GHLOG"
 case "\$1 \$2" in
-  "pr view")   exit 1 ;;                       # no existing PR → create path
+  # a branch named in merged-prs has an already-merged PR; otherwise none → create path
+  "pr view")   grep -qx "\$3" "$SL/merged-prs" 2>/dev/null || exit 1
+               case "\$*" in *"--json state"*) echo MERGED ;; *) echo "https://example.test/pr/9" ;; esac ;;
   "pr create") echo "https://example.test/pr/1" ;;
-  "pr merge")  exit 0 ;;
+  # merge for real, like GitHub would — the verification step checks origin
+  "pr merge")  [ -e "$SL/merge-is-a-lie" ] || git push -q origin "\$3:main" ;;
 esac
 EOF
 chmod +x "$SL/bin/gh"
@@ -688,8 +691,29 @@ echo "$out" | grep -q "state landed and merged" || fail "state-land: state-only 
 grep -q "pr merge" "$GHLOG" || fail "state-land: merge was not attempted"
 [ "$(git -C "$WS" rev-parse --abbrev-ref HEAD)" = "main" ] || fail "state-land: must end back on main"
 [ -z "$(git -C "$WS" branch --list 'state/*')" ] || fail "state-land: state/ branch left behind"
-# the stub cannot merge on the server, so realign the bare origin for the next case
-git -C "$WS" push -q origin main
+
+# a branch whose PR already merged must not be reused: fresh branch, fresh PR
+: > "$GHLOG"
+git -C "$WS" checkout -qb state/stale
+echo "note2" > intentpipe/updates/tg-1-2.md
+git -C "$WS" add intentpipe/updates && git -C "$WS" -c user.email=t@t -c user.name=t commit -qm "state: note2"
+echo state/stale > "$SL/merged-prs"
+out=$(PATH="$SL/bin:$PATH" "$INTENTPIPE/scripts/state-land.sh")
+grep -q "PR for state/stale is MERGED" <<<"$out" || fail "state-land: must not reuse a merged branch"
+grep -q "pr create" "$GHLOG" || fail "state-land: merged branch must get a new PR"
+grep -q "state landed and merged" <<<"$out" || fail "state-land: fresh branch must land"
+[ "$(git -C "$WS" rev-list --count origin/main..HEAD)" = 0 ] || fail "state-land: commits stranded off main"
+: > "$SL/merged-prs"
+
+# a merge that does not actually reach main must fail loudly, not claim success
+echo "note3" > intentpipe/updates/tg-1-3.md
+git -C "$WS" add intentpipe/updates && git -C "$WS" -c user.email=t@t -c user.name=t commit -qm "state: note3"
+: > "$SL/merge-is-a-lie"
+out=$(PATH="$SL/bin:$PATH" "$INTENTPIPE/scripts/state-land.sh") && fail "state-land: unverified merge must exit non-zero"
+grep -q "state landed and merged" <<<"$out" && fail "state-land: claimed success without landing" || true
+grep -q "still off origin/main" <<<"$out" || fail "state-land: must report the stranded commits"
+rm -f "$SL/merge-is-a-lie"
+git -C "$WS" checkout -q main && git -C "$WS" reset -q --hard origin/main
 
 # a non-state path in the diff → PR opened but NOT merged
 : > "$GHLOG"

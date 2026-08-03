@@ -9,7 +9,9 @@
 # Tolerant by design, same seam contract as notify.sh: state landing is a side
 # channel — its failure must never fail the flow that called it. Every early
 # return is exit 0 with a printed reason; only a push/merge that goes wrong
-# escalates via notify.sh so the pile-up is visible instead of silent.
+# escalates via notify.sh so the pile-up is visible instead of silent. The one
+# non-zero exit is a merge that did not actually reach the base branch: a false
+# "landed" is worse than a noisy failure, since nobody goes looking for it.
 #
 # Usage: state-land.sh   (run from anywhere below the project root)
 set -euo pipefail
@@ -47,12 +49,24 @@ ahead=$(git -C "$root" rev-list --count "origin/$base..HEAD")
 [ "$ahead" -gt 0 ] || { say "nothing ahead of origin/$base"; exit 0; }
 
 # The guard forbids pushing the default branch, so commits sitting on it
-# locally get their own state/ branch; a flow branch is pushed as itself.
-if [ "$branch" = "$base" ]; then
+# locally get their own state/ branch; a flow branch is pushed as itself —
+# unless its PR is already merged. Reusing a landed branch pushes onto a branch
+# nobody will merge again, and the PR lookup below then reports that merged PR
+# as success while the new commits sit stranded off "$base". A fresh branch is
+# cut at HEAD, so those stranded commits ride along instead of being abandoned.
+land=""
+if [ "$branch" != "$base" ]; then
+  land="$branch"
+  st=$(cd "$root" && gh pr view "$branch" --json state --jq .state 2>/dev/null) || st=""
+  case "$st" in
+    MERGED|CLOSED)
+      say "PR for $branch is $st — cutting a fresh branch for the $ahead stranded commit(s)"
+      land="" ;;
+  esac
+fi
+if [ -z "$land" ]; then
   land="state/$(date -u +%Y%m%d-%H%M%S)"
   git -C "$root" branch "$land"
-else
-  land="$branch"
 fi
 git -C "$root" push -qu origin "$land" \
   || { "$SCRIPTS/notify.sh" "state-land: push of $land failed in $(basename "$root") — state is stranded locally"; exit 0; }
@@ -84,9 +98,19 @@ if [ "$state_only" -ne 1 ]; then
 fi
 
 if (cd "$root" && gh pr merge "$land" --merge >/dev/null 2>&1); then
+  # "merged" is gh's claim about a PR, not proof that these commits reached
+  # "$base" — check before saying so, or stranded state stays silent again.
+  git -C "$root" fetch -q origin "$base" \
+    || { say "merged $url but could not re-fetch to verify — check origin/$base"; exit 0; }
+  left=$(git -C "$root" rev-list --count "origin/$base..HEAD")
+  [ "$left" -eq 0 ] || {
+    "$SCRIPTS/notify.sh" "state-land: $url reports merged but $left commit(s) are still off origin/$base in $(basename "$root") — state is stranded"
+    exit 1
+  }
   say "state landed and merged: $url"
-  if [ "$branch" = "$base" ]; then
-    git -C "$root" pull -q --ff-only origin "$base" 2>/dev/null || true
+  [ "$branch" = "$base" ] \
+    && git -C "$root" pull -q --ff-only origin "$base" 2>/dev/null || true
+  if [ "$land" != "$branch" ]; then  # a branch we cut, not the flow's own
     git -C "$root" branch -qD "$land" 2>/dev/null || true
     git -C "$root" push -q origin --delete "$land" 2>/dev/null || true
   fi
