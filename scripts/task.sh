@@ -242,18 +242,44 @@ feature_complete() { # rc 0 if every member task of feature <slug> is done
   return 0
 }
 
+# GitHub rejects a createPullRequest whose body exceeds 65536 characters. A
+# feature that aggregates many task contracts blows past that, and the failure
+# lands after the branch is already pushed — so degrade the body instead.
+PR_BODY_MAX=64000
+
+feature_body() { # <slug> <1|0 include reviews> → aggregated PR body on stdout
+  local slug="$1" reviews="$2" tid d
+  for tid in $(get_field "$(feature_md "$slug")" Tasks); do
+    d=$(task_dir "$tid")
+    printf '## %s\n\n' "$(head -1 "$d/task.md" | sed 's/^# //')"
+    awk '/^## Goal/,0' "$d/task.md"
+    [ "$reviews" != 1 ] || [ ! -f "$d/review.md" ] \
+      || printf '\n### Agent review\n\n%s\n' "$(cat "$d/review.md")"
+    printf '\nTask-Id: %s\n\n' "$tid"
+  done
+}
+
 ship_feature() { # all member tasks landed → push feature/<slug>, open one PR
   # per repo with the aggregated task contracts + reviews; sync completes it.
-  local slug="$1" fmd branch tid d repo path repos="" url urls="" body
+  local slug="$1" fmd branch tid d repo path repos="" url urls="" body cut
   fmd=$(feature_md "$slug"); branch="feature/$slug"
   body=$(mktemp)
+  # Contracts first, reviews only if they fit: the contract is what a human
+  # merging the PR must read; the reviews are on the branch either way.
+  feature_body "$slug" 1 > "$body"
+  if [ "$(wc -c < "$body")" -gt "$PR_BODY_MAX" ]; then
+    { feature_body "$slug" 0
+      printf '\n---\n\n_Per-task agent reviews omitted to fit the PR body limit — they are in `intentpipe/tasks/<id>/review.md` on this branch._\n'
+    } > "$body"
+  fi
+  if [ "$(wc -c < "$body")" -gt "$PR_BODY_MAX" ]; then   # contracts alone still over
+    cut=$(mktemp)
+    head -c "$((PR_BODY_MAX - 300))" "$body" > "$cut"
+    printf '\n\n---\n\n_Truncated to fit the PR body limit — the full task contracts are in `intentpipe/tasks/` on this branch._\n' >> "$cut"
+    mv "$cut" "$body"
+  fi
   for tid in $(get_field "$fmd" Tasks); do
     d=$(task_dir "$tid")
-    { printf '## %s\n\n' "$(head -1 "$d/task.md" | sed 's/^# //')"
-      awk '/^## Goal/,0' "$d/task.md"
-      [ ! -f "$d/review.md" ] || printf '\n### Agent review\n\n%s\n' "$(cat "$d/review.md")"
-      printf '\nTask-Id: %s\n\n' "$tid"
-    } >> "$body"
     for repo in $(get_field "$d/task.md" Repos); do
       case " $repos " in *" $repo "*) ;; *) repos="$repos $repo" ;; esac
     done
