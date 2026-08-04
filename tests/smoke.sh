@@ -94,6 +94,29 @@ git -C app stash list | grep -q "unblock clean-repo" || fail "clean-repo did not
 "$INTENTPIPE/scripts/task.sh" clean-repo app | grep -q "already clean" || fail "clean-repo on clean tree should no-op"
 git -C app stash drop >/dev/null 2>&1   # tidy the scratch repo
 
+# --- clean-repo with root-owned container leftovers: reclaim ownership (bounded
+# chown, destroys nothing) then stash — never leave agents to `sudo rm -rf`.
+# Stub `id -un` to claim another owner so every path reads as foreign, and stub
+# `sudo` to observe the chown without needing root.
+STUB="$(mktemp -d)"
+printf '#!/bin/bash\nif [ "$1" = "-un" ]; then echo nobody; else /usr/bin/id "$@"; fi\n' > "$STUB/id"
+printf '#!/bin/bash\necho "sudo $*" >> "%s/sudo.log"\nexit 0\n' "$STUB" > "$STUB/sudo"
+chmod +x "$STUB/id" "$STUB/sudo"
+echo "stray edit" >> app/ok.txt
+out=$(PATH="$STUB:$PATH" "$INTENTPIPE/scripts/task.sh" clean-repo app) || fail "clean-repo should succeed when chown works"
+echo "$out" | grep -q "not owned by nobody" || fail "clean-repo should report foreign-owned paths"
+echo "$out" | grep -q "ownership reclaimed" || fail "clean-repo should reclaim ownership before stashing"
+grep -q "chown -R nobody" "$STUB/sudo.log" || fail "clean-repo should chown, not delete"
+echo "$out" | grep -q "stashed" || fail "clean-repo should still stash after the chown"
+git -C app stash drop >/dev/null 2>&1
+# no passwordless sudo → fail loudly with the container fallback, don't half-stash
+printf '#!/bin/bash\nexit 1\n' > "$STUB/sudo"; chmod +x "$STUB/sudo"
+echo "stray edit" >> app/ok.txt
+PATH="$STUB:$PATH" "$INTENTPIPE/scripts/task.sh" clean-repo app 2>"$STUB/err" && fail "clean-repo must fail when it cannot reclaim ownership" || true
+grep -q "docker run" "$STUB/err" || fail "clean-repo failure should print the container fallback"
+git -C app checkout -- ok.txt   # tidy for the tests below
+rm -rf "$STUB"
+
 "$INTENTPIPE/scripts/task.sh" next >/dev/null && fail "blocked task must not be next" || true
 "$INTENTPIPE/scripts/task.sh" reopen "$id2" >/dev/null
 [ "$("$INTENTPIPE/scripts/task.sh" next)" = "0002" ] || fail "reopened task should be next"
