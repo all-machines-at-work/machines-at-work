@@ -209,6 +209,25 @@ cmd_clean_repo() { # Recoverably clear a repo's dirty working tree so preflight
      && [ -z "$(git -C "$path" ls-files --others --exclude-standard)" ]; then
     echo "clean-repo: $repo already clean"; return 0
   fi
+  # A crashed docker run writes root-owned build artifacts through the bind
+  # mount; the stash below then dies on EPERM, and agents have improvised
+  # unbounded `sudo rm -rf` inside the checkout. Reclaim OWNERSHIP instead —
+  # bounded to this repo and destroys nothing; the stash still decides what
+  # leaves the tree.
+  local foreign owner
+  owner=$(id -un)
+  foreign=$(find "$path" ! -user "$owner" 2>/dev/null | head -200) || true
+  if [ -n "$foreign" ]; then
+    echo "clean-repo: $repo has $(echo "$foreign" | wc -l) path(s) not owned by $owner (container leftovers), e.g.:"
+    echo "$foreign" | head -5 | sed 's/^/  /'
+    if sudo -n chown -R "$owner" -- "$path" 2>/dev/null; then
+      echo "clean-repo: ownership reclaimed (sudo chown -R $owner)"
+    else
+      echo "clean-repo: cannot reclaim ownership (no passwordless sudo); fix it via a container instead:" >&2
+      echo "  docker run --rm -v \"$path\":/w busybox chown -R $(id -u):$(id -g) /w" >&2
+      return 1
+    fi
+  fi
   git -C "$path" stash push -u -m "unblock clean-repo $(date -u +%FT%TZ)" >/dev/null
   echo "clean-repo: $repo stashed (recover: git -C $path stash list)"
 }
