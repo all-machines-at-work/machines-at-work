@@ -655,6 +655,7 @@ VERIFY_app="sleep 1"
 EOF
 cat > "$TMP/bin/claude" <<EOF
 #!/usr/bin/env bash
+printf '%s\n' "\$*" >> "$TMP/claude-args.log"
 "$INTENTPIPE/scripts/verify.sh" >/dev/null 2>&1   # a session runs the gates
 sleep 1
 echo '{"total_cost_usd": 0.42, "usage": {"input_tokens": 12000, "cache_creation_input_tokens": 0, "cache_read_input_tokens": 1828000, "output_tokens": 11500}}'
@@ -675,6 +676,31 @@ grep -qE '^Timing: total [0-9]+[hms].* llm .* verify ' intentpipe/tasks/"$t4"-*/
   || fail "Timing field must break the task down per step"
 grep -q '^verify:app	' intentpipe/tasks/"$t4"-*/timings.tsv \
   || fail "a gate run inside the session must land in that task's timings.tsv"
+
+# --- per-task model: the planner's Model: field picks the session model, an
+# explicit MODEL= pins the whole run over it, and an unknown value warns and
+# falls back to the default instead of dying mid-queue.
+grep -q -- '--model opus' "$TMP/claude-args.log" || fail "a task without a Model pick must run on the default (opus)"
+lib "set_field $(ls intentpipe/tasks/"$t4"-*/task.md) Status done"   # unclog the queue for the next runs
+t5=$("$INTENTPIPE/scripts/task.sh" new "Sonnet task")
+t5md=$(ls intentpipe/tasks/"$t5"-*/task.md)
+grep -q '^Model: -' "$t5md" || fail "task.sh new must stamp a Model field"
+lib "set_field $t5md Model sonnet"
+: > "$TMP/claude-args.log"
+PATH="$TMP/bin:$PATH" MAX_TASKS=1 env -u ANTHROPIC_API_KEY -u ANTHROPIC_AUTH_TOKEN -u MODEL \
+  "$INTENTPIPE/scripts/loop.sh" >/dev/null 2>&1 || fail "loop.sh (Model: sonnet) failed"
+grep -q -- '--model sonnet' "$TMP/claude-args.log" || fail "the planner's Model: sonnet must reach claude --model"
+: > "$TMP/claude-args.log"
+PATH="$TMP/bin:$PATH" MAX_TASKS=1 MODEL=fable env -u ANTHROPIC_API_KEY -u ANTHROPIC_AUTH_TOKEN \
+  "$INTENTPIPE/scripts/loop.sh" >/dev/null 2>&1 || fail "loop.sh (MODEL=fable pin) failed"
+grep -q -- '--model claude-fable-5' "$TMP/claude-args.log" \
+  || fail "an explicit MODEL= must pin the run over the task's Model: pick"
+lib "set_field $t5md Model gpt9"
+: > "$TMP/claude-args.log"
+lout5=$(PATH="$TMP/bin:$PATH" MAX_TASKS=1 env -u ANTHROPIC_API_KEY -u ANTHROPIC_AUTH_TOKEN -u MODEL \
+  "$INTENTPIPE/scripts/loop.sh" 2>&1) || fail "loop.sh (unknown Model) failed: $lout5"
+grep -q -- '--model opus' "$TMP/claude-args.log" || fail "an unknown Model value must fall back to the default"
+echo "$lout5" | grep -q "unknown Model 'gpt9'" || fail "an unknown Model value must warn"
 cd "$WS"
 
 # --- state-land.sh: PR + automerge for state-only diffs, via a stub gh that

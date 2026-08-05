@@ -25,8 +25,11 @@
 # before any work (no network, stranded tree) are retried up to MAX_RETRIES with
 # RETRY_BACKOFF between tries — never counting against MAX_RESUME — then hard-stop
 # with the captured reason; a zero-commit branch is abandoned so the retry is clean.
-# MODEL pins the model passed to claude -p (default opus) so the session never
-# silently falls back to a cheaper default; set MODEL=sonnet|fable to switch.
+# Each task runs on the model the planner chose for it (Model: sonnet|opus in
+# task.md; unset/unknown → opus). An explicitly set MODEL=sonnet|opus|fable pins
+# the whole run instead — the escape hatch for limits/credits stays a one-knob
+# override — and either way the session never silently falls back to a cheaper
+# default.
 # Every finished task reports what it cost in BOTH currencies — dollars (real, or
 # API-equivalent on a subscription) and tokens — plus a per-step wall-clock
 # breakdown (preflight / llm / verify / smoke) collected in tasks/<id>/timings.tsv
@@ -53,16 +56,21 @@ RETRY_BACKOFF="${RETRY_BACKOFF:-60}"
 # limit is not the kind that's about to clear and a human should decide.
 MAX_LIMIT_RETRIES="${MAX_LIMIT_RETRIES:-6}"
 BUILD_SKILL="${BUILD_SKILL:-/intentpipe:build}"
-# Pin the model so a one-shot session never silently falls back to a cheaper
-# default. Friendly names map to what claude --model accepts.
+# Model resolution: the planner picks per task (Model: field); an explicitly set
+# MODEL pins the whole run and overrides those picks. Friendly names map to what
+# claude --model accepts, and an unknown name is loud, never a silent fallback.
+model_arg() {
+  case "$1" in
+    opus)   echo "opus" ;;
+    sonnet) echo "sonnet" ;;
+    fable)  echo "claude-fable-5" ;;
+    *) return 1 ;;
+  esac
+}
+MODEL_PINNED="${MODEL:+1}"
 MODEL="${MODEL:-opus}"
-case "$MODEL" in
-  opus)   MODEL_ARG="opus" ;;
-  sonnet) MODEL_ARG="sonnet" ;;
-  fable)  MODEL_ARG="claude-fable-5" ;;
-  *) echo "ERROR: MODEL must be opus, sonnet, or fable (got '$MODEL')" >&2; exit 1 ;;
-esac
-MODEL_UC=$(echo "$MODEL" | tr '[:lower:]' '[:upper:]')
+MODEL_ARG=$(model_arg "$MODEL") \
+  || { echo "ERROR: MODEL must be opus, sonnet, or fable (got '$MODEL')" >&2; exit 1; }
 total_cost=0 n=0 retries=0 total_in=0 total_out=0 total_secs=0
 # Consecutive usage-limit waits (reset when a task finishes) and the total time
 # spent in them, for the give-up message.
@@ -170,7 +178,20 @@ while [ "$n" -lt "$MAX_TASKS" ]; do
   fi
   if [ -n "$SUBSCRIPTION" ]; then spent="subscription"; else spent="\$$total_cost"; fi
   echo "══ task $id (task $((n + 1))/$MAX_TASKS, spent $spent)"
-  echo "Solving task with $MODEL_UC"
+  # The planner's per-task pick, unless the run pinned a model. An unknown value
+  # (a typo'd field) warns and falls back rather than dying mid-queue.
+  task_model="$MODEL" task_model_arg="$MODEL_ARG"
+  if [ -z "$MODEL_PINNED" ]; then
+    tmodel=$(get_field "$(task_dir "$id")/task.md" Model) || tmodel=""
+    if [ -n "$tmodel" ] && [ "$tmodel" != "-" ]; then
+      if targ=$(model_arg "$tmodel"); then
+        task_model="$tmodel" task_model_arg="$targ"
+      else
+        echo "WARN: task $id has unknown Model '$tmodel' — using $MODEL" >&2
+      fi
+    fi
+  fi
+  echo "Solving task with $(echo "$task_model" | tr '[:lower:]' '[:upper:]')"
   resume=0; task_cost=0; task_in=0; task_out=0; fail_reason=""; prompt="$BUILD_SKILL $id"; sid=""
   # INTENTPIPE_TIMING_ID pins every script the session runs (preflight/verify) to this
   # task's timings.tsv, whatever its Status has become by then.
@@ -184,7 +205,7 @@ while [ "$n" -lt "$MAX_TASKS" ]; do
     sess_t0=$(date +%s); scripted_before=$(timing_total "$id")
     out=$(claude -p "$prompt" \
           ${sid:+--resume "$sid"} \
-          --model "$MODEL_ARG" \
+          --model "$task_model_arg" \
           --permission-mode acceptEdits \
           --allowedTools "Bash,Read,Edit,Write,Glob,Grep,Agent,Skill,TodoWrite" \
           --output-format json 2>"$errf") || rc=$?

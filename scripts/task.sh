@@ -57,6 +57,7 @@ Cost: -
 Timing: -
 Decision: -
 Resources: -
+Model: -
 
 ## Goal
 
