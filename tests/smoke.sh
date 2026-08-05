@@ -298,6 +298,46 @@ EOF
   [ -f b/ran_verify_b ] || fail "untouched repo must still run its tests at done"
   [ -f b/ran_smoke_b ] && fail "untouched repo's smoke must NOT fire at done" || true
 )
+# --- publish: under DONE=local the squash-merge is the terminal state, so done
+# must also push it — an unpublished green task is invisible until a human looks
+# (bibbles sat three tasks behind origin). Tolerant: a rejected push is reported,
+# never fatal. DONE=pr must not publish at all — the platform merges there.
+WSP="$TMP/wsp"; mkdir -p "$WSP/a" "$WSP/intentpipe/tasks"
+git -C "$WSP" init -qb main && git -C "$WSP" config user.email t@t && git -C "$WSP" config user.name t
+git init -q --bare -b main "$TMP/origin-a.git"
+git -C "$WSP/a" init -qb main
+git -C "$WSP/a" -c user.email=t@t -c user.name=t commit -qm init --allow-empty
+git -C "$WSP/a" remote add origin "$TMP/origin-a.git"
+git -C "$WSP/a" push -q origin main
+cat > "$WSP/intentpipe/agents.env" <<'EOF'
+PROJECT_NAME=smoke_pub
+DEFAULT_BRANCH=main
+REPOS="a"
+REPO_a=../a
+VERIFY_a="true"
+EOF
+(
+  cd "$WSP"
+  pid=$("$INTENTPIPE/scripts/task.sh" new "Publishable change" a)
+  "$INTENTPIPE/scripts/task.sh" start "$pid" >/dev/null
+  echo p > a/p.txt && git -C a add . && git -C a -c user.email=t@t -c user.name=t commit -qm "p"
+  "$INTENTPIPE/scripts/task.sh" done "$pid" >/dev/null || fail "publish: done failed"
+  git -C "$TMP/origin-a.git" log --oneline main | grep -q "Publishable change" \
+    || fail "done under DONE=local must push the merged default branch to origin"
+  out=$(DONE=pr "$INTENTPIPE/scripts/publish.sh" 2>&1)
+  echo "$out" | grep -q "nothing to publish" || fail "publish must no-op under DONE=pr: $out"
+  # origin moves under us (a human pushed from elsewhere): the push is rejected,
+  # and that must be loud but never fatal — the commits are safe in local main.
+  git clone -q "$TMP/origin-a.git" "$TMP/mate"
+  git -C "$TMP/mate" -c user.email=t@t -c user.name=t commit -qm teammate --allow-empty
+  git -C "$TMP/mate" push -q origin main
+  echo q > a/q.txt && git -C a add . && git -C a -c user.email=t@t -c user.name=t commit -qm "q"
+  "$INTENTPIPE/scripts/publish.sh" a > "$TMP/pub.out" 2>&1 \
+    || fail "publish must exit 0 even when the push is rejected"
+  grep -q "push failed" "$TMP/pub.out" || fail "publish must report a rejected push: $(cat "$TMP/pub.out")"
+)
+echo "[smoke] publish.sh ok"
+
 # --- a verify command that leaves workers behind (flutter test does, on every
 # run) must not leak them: the run owns a process group, reaped when it returns
 WSR="$TMP/wsr"; mkdir -p "$WSR/c"
