@@ -268,6 +268,30 @@ EOF
 (cd "$WS2" && "$INTENTPIPE/scripts/verify.sh" 2>&1 >/dev/null | grep -q . ) \
   && fail "verify wrote to stderr in a task-less workspace" || true
 
+# --- a chatty runner must not dump its transcript into a piped caller's context
+# (verify.sh run_step): green keeps the runner's last line, red keeps a named
+# log tail bounded by VERIFY_LOG_LINES. A human at a TTY still sees everything.
+WSV="$TMP/wsv"; mkdir -p "$WSV/c"
+mkenvv() { cat > "$WSV/agents.env" <<EOF
+PROJECT_NAME=smokev
+REPOS="c"
+REPO_c=c
+VERIFY_c="$1"
+EOF
+}
+mkenvv 'seq 1 200; echo 200 passed'
+out=$(cd "$WSV" && "$INTENTPIPE/scripts/verify.sh" 2>&1)
+[ "$(printf '%s\n' "$out" | wc -l)" -le 4 ] \
+  || fail "green verify dumped the runner transcript ($(printf '%s\n' "$out" | wc -l) lines)"
+printf '%s\n' "$out" | grep -q "200 passed" || fail "green verify must keep the runner's summary line"
+printf '%s\n' "$out" | grep -qx "100" && fail "green verify leaked the transcript body" || true
+
+mkenvv 'seq 1 200; exit 1'
+out=$(cd "$WSV" && VERIFY_LOG_LINES=10 "$INTENTPIPE/scripts/verify.sh" 2>&1 || true)
+printf '%s\n' "$out" | grep -q "full log:" || fail "red verify must name the full log"
+printf '%s\n' "$out" | grep -qx "200" || fail "red verify must show the failing tail"
+printf '%s\n' "$out" | grep -qx "150" && fail "red verify must respect VERIFY_LOG_LINES" || true
+
 # --- done verifies the task's repos in full, the rest tests-only: an untouched
 # repo's SMOKE must not fire (it would recreate a live preview mid-review), but
 # its VERIFY must (a cross-repo break may not land green)
@@ -827,6 +851,24 @@ g '{"tool_name":"Bash","tool_input":{"command":"rm -rf /"}}' && fail "guard: rm 
 g '{"tool_name":"Bash","tool_input":{"command":"git push origin task/0001-x"}}' || fail "guard: task-branch push blocked"
 g '{"tool_name":"Bash","tool_input":{"command":"rm -rf node_modules"}}' || fail "guard: normal rm blocked"
 g '{"tool_name":"Bash","tool_input":{"command":"rm -rf intentpipe/updates"}}' && fail "guard: updates folder rm allowed" || true
+# main/master is only a push target when it IS the ref: a chained `gh pr create
+# --base master`, or a branch merely containing the word, must not read as one.
+g '{"tool_name":"Bash","tool_input":{"command":"git push -u origin feat/x; gh pr create --base master"}}' \
+  || fail "guard: --base master after a task-branch push must not read as a push to master"
+g '{"tool_name":"Bash","tool_input":{"command":"git push origin feat/x && gh pr create --base main"}}' \
+  || fail "guard: --base main after a task-branch push must not read as a push to main"
+g '{"tool_name":"Bash","tool_input":{"command":"git push origin fix/master-timeout"}}' \
+  || fail "guard: a branch whose name contains master must be pushable"
+g '{"tool_name":"Bash","tool_input":{"command":"git push origin mainline"}}' \
+  || fail "guard: a branch whose name starts with main must be pushable"
+# ...and the real thing stays blocked, in every shape it comes in
+g '{"tool_name":"Bash","tool_input":{"command":"git push origin HEAD:main"}}' && fail "guard: HEAD:main refspec allowed" || true
+g '{"tool_name":"Bash","tool_input":{"command":"git push origin master:master"}}' && fail "guard: master:master refspec allowed" || true
+g '{"tool_name":"Bash","tool_input":{"command":"git push origin refs/heads/main"}}' && fail "guard: refs/heads/main allowed" || true
+g '{"tool_name":"Bash","tool_input":{"command":"git push -u origin master 2>&1 | tee log"}}' && fail "guard: piped push to master allowed" || true
+g '{"tool_name":"Bash","tool_input":{"command":"echo hi && git push origin main"}}' && fail "guard: push to main after a chain allowed" || true
+g '{"tool_name":"Bash","tool_input":{"command":"git push --force origin x | tee log"}}' && fail "guard: piped force-push allowed" || true
+g '{"tool_name":"Bash","tool_input":{"command":"true; rm -rf /"}}' && fail "guard: chained rm -rf / allowed" || true
 g '{"tool_name":"Bash","tool_input":{"command":"git rm -r updates/"}}' && fail "guard: git rm -r updates allowed" || true
 g '{"tool_name":"Bash","tool_input":{"command":"rm updates/*"}}' && fail "guard: updates wildcard rm allowed" || true
 g '{"tool_name":"Bash","tool_input":{"command":"git rm updates/tg-1600000000-42.md"}}' || fail "guard: single note rm blocked"
