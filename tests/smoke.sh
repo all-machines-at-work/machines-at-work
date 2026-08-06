@@ -851,6 +851,24 @@ g '{"tool_name":"Bash","tool_input":{"command":"rm -rf /"}}' && fail "guard: rm 
 g '{"tool_name":"Bash","tool_input":{"command":"git push origin task/0001-x"}}' || fail "guard: task-branch push blocked"
 g '{"tool_name":"Bash","tool_input":{"command":"rm -rf node_modules"}}' || fail "guard: normal rm blocked"
 g '{"tool_name":"Bash","tool_input":{"command":"rm -rf intentpipe/updates"}}' && fail "guard: updates folder rm allowed" || true
+# main/master is only a push target when it IS the ref: a chained `gh pr create
+# --base master`, or a branch merely containing the word, must not read as one.
+g '{"tool_name":"Bash","tool_input":{"command":"git push -u origin feat/x; gh pr create --base master"}}' \
+  || fail "guard: --base master after a task-branch push must not read as a push to master"
+g '{"tool_name":"Bash","tool_input":{"command":"git push origin feat/x && gh pr create --base main"}}' \
+  || fail "guard: --base main after a task-branch push must not read as a push to main"
+g '{"tool_name":"Bash","tool_input":{"command":"git push origin fix/master-timeout"}}' \
+  || fail "guard: a branch whose name contains master must be pushable"
+g '{"tool_name":"Bash","tool_input":{"command":"git push origin mainline"}}' \
+  || fail "guard: a branch whose name starts with main must be pushable"
+# ...and the real thing stays blocked, in every shape it comes in
+g '{"tool_name":"Bash","tool_input":{"command":"git push origin HEAD:main"}}' && fail "guard: HEAD:main refspec allowed" || true
+g '{"tool_name":"Bash","tool_input":{"command":"git push origin master:master"}}' && fail "guard: master:master refspec allowed" || true
+g '{"tool_name":"Bash","tool_input":{"command":"git push origin refs/heads/main"}}' && fail "guard: refs/heads/main allowed" || true
+g '{"tool_name":"Bash","tool_input":{"command":"git push -u origin master 2>&1 | tee log"}}' && fail "guard: piped push to master allowed" || true
+g '{"tool_name":"Bash","tool_input":{"command":"echo hi && git push origin main"}}' && fail "guard: push to main after a chain allowed" || true
+g '{"tool_name":"Bash","tool_input":{"command":"git push --force origin x | tee log"}}' && fail "guard: piped force-push allowed" || true
+g '{"tool_name":"Bash","tool_input":{"command":"true; rm -rf /"}}' && fail "guard: chained rm -rf / allowed" || true
 g '{"tool_name":"Bash","tool_input":{"command":"git rm -r updates/"}}' && fail "guard: git rm -r updates allowed" || true
 g '{"tool_name":"Bash","tool_input":{"command":"rm updates/*"}}' && fail "guard: updates wildcard rm allowed" || true
 g '{"tool_name":"Bash","tool_input":{"command":"git rm updates/tg-1600000000-42.md"}}' || fail "guard: single note rm blocked"
