@@ -403,6 +403,13 @@ cmd_done() {
   set_field "$md" Status done
   set_field "$md" Commits "${shas# }"
   echo "- $id · $title ·${shas:- no changes}" >> "$TASKS/_log.md"
+  # Push what just landed. Under DONE=local the merge above is the whole terminal
+  # state, so a task that never publishes leaves origin silently stale; doing it
+  # per task (not per loop run) means a run killed mid-flight — usage limit,
+  # crash — still leaves origin current for the tasks that did land. publish.sh
+  # is tolerant and no-ops under DONE=pr, so a failed push never fails a green task.
+  # shellcheck disable=SC2086
+  [ -z "$shas" ] || "$(dirname "${BASH_SOURCE[0]}")/publish.sh" $(get_field "$md" Repos) || true
   if [ "$target" != "$DEFAULT_BRANCH" ] && feature_complete "$feature"; then
     ship_feature "$feature"   # last member task landed → open the feature PR
   fi
