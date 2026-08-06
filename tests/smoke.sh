@@ -268,6 +268,30 @@ EOF
 (cd "$WS2" && "$INTENTPIPE/scripts/verify.sh" 2>&1 >/dev/null | grep -q . ) \
   && fail "verify wrote to stderr in a task-less workspace" || true
 
+# --- a chatty runner must not dump its transcript into a piped caller's context
+# (verify.sh run_step): green keeps the runner's last line, red keeps a named
+# log tail bounded by VERIFY_LOG_LINES. A human at a TTY still sees everything.
+WSV="$TMP/wsv"; mkdir -p "$WSV/c"
+mkenvv() { cat > "$WSV/agents.env" <<EOF
+PROJECT_NAME=smokev
+REPOS="c"
+REPO_c=c
+VERIFY_c="$1"
+EOF
+}
+mkenvv 'seq 1 200; echo 200 passed'
+out=$(cd "$WSV" && "$INTENTPIPE/scripts/verify.sh" 2>&1)
+[ "$(printf '%s\n' "$out" | wc -l)" -le 4 ] \
+  || fail "green verify dumped the runner transcript ($(printf '%s\n' "$out" | wc -l) lines)"
+printf '%s\n' "$out" | grep -q "200 passed" || fail "green verify must keep the runner's summary line"
+printf '%s\n' "$out" | grep -qx "100" && fail "green verify leaked the transcript body" || true
+
+mkenvv 'seq 1 200; exit 1'
+out=$(cd "$WSV" && VERIFY_LOG_LINES=10 "$INTENTPIPE/scripts/verify.sh" 2>&1 || true)
+printf '%s\n' "$out" | grep -q "full log:" || fail "red verify must name the full log"
+printf '%s\n' "$out" | grep -qx "200" || fail "red verify must show the failing tail"
+printf '%s\n' "$out" | grep -qx "150" && fail "red verify must respect VERIFY_LOG_LINES" || true
+
 # --- done verifies the task's repos in full, the rest tests-only: an untouched
 # repo's SMOKE must not fire (it would recreate a live preview mid-review), but
 # its VERIFY must (a cross-repo break may not land green)
